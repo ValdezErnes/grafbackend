@@ -72,12 +72,13 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
 };
 
 const generarComponente = (clase: any, componentsPath: string) => {
-    const className = clase.name.toLowerCase();
-    const componentPath = path.join(componentsPath, className);
+  const className = clase.name.toLowerCase();
+  const componentPath = path.join(componentsPath, className);
 
-    crearCarpetaSiNoExiste(componentPath);
+  crearCarpetaSiNoExiste(componentPath);
 
-    const componentTs = `
+  // TypeScript del componente
+  const componentTs = `
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -101,7 +102,9 @@ export class ${clase.name}Component implements OnInit {
 
   constructor(private ${className}Service: ${clase.name}Service) {}
 
-  ngOnInit(): void {}
+  ngOnInit(): void {
+    this.executeMethod(); // Default action on component load
+  }
 
   executeMethod(): void {
     switch (this.selectedMethod) {
@@ -154,19 +157,25 @@ export class ${clase.name}Component implements OnInit {
     this.showModal = false;
   }
 }
-    `;
+  `;
 
-    const componentHtml = `
-<div>
+  // HTML del componente
+  const componentHtml = `
+<div class="container">
   <h1>${clase.name}</h1>
-  <select [(ngModel)]="selectedMethod">
-    <option value="getAll">Obtener todos</option>
-    <option value="getById">Obtener por ID</option>
-    <option value="create">Crear nuevo</option>
-  </select>
-  <button (click)="executeMethod()">Ejecutar</button>
 
-  <table *ngIf="items.length">
+  <!-- Selector de Método -->
+  <div class="method-selector">
+    <select [(ngModel)]="selectedMethod">
+      <option value="getAll">Obtener todos</option>
+      <option value="getById">Obtener por ID</option>
+      <option value="create">Crear nuevo</option>
+    </select>
+    <button class="execute-btn" (click)="executeMethod()">Ejecutar</button>
+  </div>
+
+  <!-- Tabla de Datos -->
+  <table *ngIf="items.length" class="data-table">
     <thead>
       <tr>
         <th>ID</th>
@@ -177,44 +186,110 @@ export class ${clase.name}Component implements OnInit {
     <tbody>
       <tr *ngFor="let item of items">
         <td>{{item.ID}}</td>
-        ${clase.properties.map((attr: { name: any; }) => `<th>\{{item.${attr.name}}}</th>`).join('')}
+        ${clase.properties.map((attr: { name: any; }) => `<td>{{item.${attr.name}}}</td>`).join('')}
         <td>
-          <button (click)="editItem(item)">Editar</button>
-          <button (click)="deleteItem(item.ID)">Eliminar</button>
+          <button class="edit-btn" (click)="editItem(item)">Editar</button>
+          <button class="delete-btn" (click)="deleteItem(item.ID)">Eliminar</button>
         </td>
       </tr>
     </tbody>
   </table>
 
+  <!-- Modal de Creación/Edición -->
   <div *ngIf="showModal" class="modal">
-    <h2>{{ isEditing ? 'Editar' : 'Crear' }} ${clase.name}</h2>
-    ${clase.properties.map((attr: { name: any; }) => `
-    <label>${attr.name}: <input [(ngModel)]="formData.${attr.name}" /></label>`).join('<br/>')}
-    <br/>
-    <button (click)="saveItem()">Guardar</button>
-    <button (click)="cancel()">Cancelar</button>
+    <div class="modal-content">
+      <h2>{{ isEditing ? 'Editar' : 'Crear' }} ${clase.name}</h2>
+      ${clase.properties.map((attr: { name: any; }) => `
+      <label>${attr.name}: 
+        <input [(ngModel)]="formData.${attr.name}" placeholder="Ingrese ${attr.name}" />
+      </label>`).join('<br/>')}
+      <br/>
+      <button class="save-btn" (click)="saveItem()">Guardar</button>
+      <button class="cancel-btn" (click)="cancel()">Cancelar</button>
+    </div>
   </div>
 </div>
-    `;
+  `;
 
-    const componentCss = `
+  // CSS del componente
+  const componentCss = `
+.container {
+  padding: 20px;
+}
+.method-selector {
+  margin-bottom: 20px;
+}
+.execute-btn {
+  background-color: #3498db;
+  color: white;
+  padding: 10px;
+  border: none;
+  cursor: pointer;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+.data-table th, .data-table td {
+  padding: 10px;
+  text-align: center;
+  border: 1px solid #ccc;
+}
+.data-table th {
+  background-color: #f4f4f4;
+}
+.edit-btn, .delete-btn {
+  padding: 5px 10px;
+  border: none;
+  cursor: pointer;
+}
+.edit-btn {
+  background-color: #f39c12;
+  color: white;
+}
+.delete-btn {
+  background-color: #e74c3c;
+  color: white;
+}
 .modal {
   position: fixed;
   top: 20%;
   left: 30%;
   width: 40%;
-  padding: 1em;
+  padding: 20px;
   background-color: white;
   border: 1px solid #ccc;
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 10;
 }
-    `;
+.modal-content {
+  padding: 20px;
+}
+.save-btn {
+  background-color: #27ae60;
+  color: white;
+  padding: 10px;
+  border: none;
+  cursor: pointer;
+}
+.cancel-btn {
+  background-color: #bdc3c7;
+  color: white;
+  padding: 10px;
+  border: none;
+  cursor: pointer;
+}
+  `;
 
-    fs.writeFileSync(path.join(componentPath, `${className}.component.ts`), componentTs.trim());
-    fs.writeFileSync(path.join(componentPath, `${className}.component.html`), componentHtml.trim());
-    fs.writeFileSync(path.join(componentPath, `${className}.component.css`), componentCss.trim());
-    console.log(`✅ Componente generado: ${componentPath}`);
+  // Escribir los archivos generados
+  fs.writeFileSync(path.join(componentPath, `${className}.component.ts`), componentTs.trim());
+  fs.writeFileSync(path.join(componentPath, `${className}.component.html`), componentHtml.trim());
+  fs.writeFileSync(path.join(componentPath, `${className}.component.css`), componentCss.trim());
+
+  console.log(`✅ Componente generado: ${componentPath}`);
 };
+
 
 
 const generarServicio = (clase: any, servicesPath: string) => {
@@ -266,45 +341,100 @@ export class ${clase.name}Service {
 };
 
 const generarMenuPrincipal = (clases: any[], srcPath: string) => {
-    const menuHtmlPath = path.join(srcPath, "app.component.html");
-    const menuHtml = `
-<nav>
-  <ul>
-    ${clases
+  const menuHtmlPath = path.join(srcPath, "app.component.html");
+  const menuHtml = `
+<header>
+  <button class="menu-toggle" (click)="toggleMenu()">☰ Clases</button>
+  <nav [class.open]="menuOpen">
+    <div class="menu-grid">
+      ${clases
         .map(
-            (clase) => `
-    <li><a routerLink="/${clase.name.toLowerCase()}">${clase.name}</a></li>`
+          (clase) => `
+        <a [routerLink]="'/${clase.name.toLowerCase()}'" (click)="autoCloseMenu()">
+          ${clase.name}
+        </a>`
         )
         .join("\n")}
-  </ul>
-</nav>
-    <router-outlet></router-outlet>
-    `;
-    const menuComponentTs = `
+    </div>
+  </nav>
+</header>
+
+<main>
+  <router-outlet></router-outlet>
+</main>
+`;
+
+  const menuComponentTs = `
 import { Component } from '@angular/core';
-import { RouterOutlet,RouterLink } from '@angular/router';
+import { RouterLink, RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterLink,RouterOutlet],
+  imports: [RouterLink, RouterOutlet],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
 export class AppComponent {
-  title = 'frontend';
-} 
-  `;
+  menuOpen = true;
 
-    const menuCss = `
-    `;
+  toggleMenu() {
+    this.menuOpen = !this.menuOpen;
+  }
 
+  autoCloseMenu() {
+    this.menuOpen = false;
+  }
+}
+`;
 
-   
-    fs.writeFileSync(menuHtmlPath, menuHtml.trim());
-    fs.writeFileSync(path.join(srcPath, "app.component.ts"), menuComponentTs.trim());
-    fs.writeFileSync(path.join(srcPath, "app.component.css"), menuCss.trim());
-    console.log(`✅ Menú principal generado: ${menuHtmlPath}`);
+  const menuCss = `
+header {
+  background: #2c3e50;
+  color: white;
+  padding: 10px;
+}
+.menu-toggle {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+nav {
+  display: none;
+}
+nav.open {
+  display: block;
+}
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+.menu-grid a {
+  color: white;
+  background-color: #34495e;
+  padding: 10px;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background-color 0.2s ease;
+}
+.menu-grid a:hover {
+  background-color: #3d566e;
+}
+main {
+  padding: 20px;
+}
+`;
+
+  fs.writeFileSync(menuHtmlPath, menuHtml.trim());
+  fs.writeFileSync(path.join(srcPath, "app.component.ts"), menuComponentTs.trim());
+  fs.writeFileSync(path.join(srcPath, "app.component.css"), menuCss.trim());
+  console.log(`✅ Menú principal generado en columnas: ${menuHtmlPath}`);
 };
 
 

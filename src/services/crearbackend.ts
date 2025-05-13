@@ -77,7 +77,7 @@ export const createProjectBackend = async (nombreProyecto: string,graphModel: an
         routes: path.join(backendPath, 'src','routes'),
     };
 
-    if (fs.existsSync(projectFolderPath)) {
+    if (fs.existsSync(backendPath)) {
         console.log('🟡 Carpeta del proyecto ya existe, continuando...');
         processGraphModel(graphModel, paths.models, paths.routes, paths.controllers);
         return;
@@ -196,6 +196,7 @@ const generarArchivoModelo = (node: any,modelsPath: string): void => {
     const className = node.name;
     const tableName = className.toLowerCase();
     const filePath = path.join(modelsPath, `${className}.ts`);
+    
 
     const properties = node.properties.filter((prop: any) => prop.name.toLowerCase() !== 'id').map((prop: any) => {
         const cleanName = prop.name.replace(/\s+/g, '_'); // Reemplaza espacios por _
@@ -322,11 +323,11 @@ import { getByID, getAll, post${className}, put${className}, deleteID } from '..
 
 const router = Router();
 
-router.get('/${className.toLowerCase()}', getAll);
-router.get('/${className.toLowerCase()}/:id', getByID);
-router.post('/${className.toLowerCase()}', post${className});
-router.put('/${className.toLowerCase()}/:id', put${className});
-router.delete('/${className.toLowerCase()}/:id', deleteID);
+router.get('', getAll);
+router.get('/:id', getByID);
+router.post('', post${className});
+router.put('/:id', put${className});
+router.delete('/:id', deleteID);
 
 export { router };
 `;

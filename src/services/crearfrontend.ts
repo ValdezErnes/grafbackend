@@ -25,13 +25,19 @@ const crearCarpetaSiNoExiste = (ruta: string) => {
     }
 };
 
-export const createProjectFrontend = async (nombreProyecto: string, clases: any[]): Promise<void> => {
+export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string): Promise<void> => {
     const desktopPath = path.join(os.homedir(), "Escriotorio");
     const projectFolderPath = path.join(desktopPath, nombreProyecto);
     const frontendPath = path.join(projectFolderPath, `${nombreProyecto}-frontend`);
     const srcPath = path.join(frontendPath, "src", "app");
     const componentsPath = path.join(srcPath, "components");
     const servicesPath = path.join(srcPath, "services");
+
+    const graphModel = JSON.parse(graphModel1);
+    const clases = [];
+    for (const node of graphModel.nodeDataArray) {
+        clases.push(node);
+    }
 
     if (!fs.existsSync(frontendPath)) {
       console.log("🚀 Creando proyecto Angular...");
@@ -67,12 +73,7 @@ export const createProjectFrontend = async (nombreProyecto: string, clases: any[
 
 const generarComponente = (clase: any, componentsPath: string) => {
     const className = clase.name.toLowerCase();
-    const attributes = Array.isArray(clase.attributes)
-    ? clase.attributes
-    : Array.isArray(clase.properties)
-      ? clase.properties
-      : [];
-      const componentPath = path.join(componentsPath, className);
+    const componentPath = path.join(componentsPath, className);
 
     crearCarpetaSiNoExiste(componentPath);
 
@@ -137,7 +138,7 @@ export class ${clase.name}Component implements OnInit {
 
   saveItem(): void {
     if (this.isEditing) {
-      this.${className}Service.update(this.formData.id, this.formData).subscribe(() => {
+      this.${className}Service.update(this.formData.ID, this.formData).subscribe(() => {
         this.executeMethod();
         this.showModal = false;
       });
@@ -168,16 +169,18 @@ export class ${clase.name}Component implements OnInit {
   <table *ngIf="items.length">
     <thead>
       <tr>
+        <th>ID</th>
         ${clase.properties.map((attr: { name: any; }) => `<th>${attr.name}</th>`).join('')}
         <th>Acciones</th>
       </tr>
     </thead>
     <tbody>
       <tr *ngFor="let item of items">
-        ${clase.properties.map((attr: { name: any; }) => `<th>${attr.name}</th>`).join('')}
+        <td>{{item.ID}}</td>
+        ${clase.properties.map((attr: { name: any; }) => `<th>\{{item.${attr.name}}}</th>`).join('')}
         <td>
           <button (click)="editItem(item)">Editar</button>
-          <button (click)="deleteItem(item.id)">Eliminar</button>
+          <button (click)="deleteItem(item.ID)">Eliminar</button>
         </td>
       </tr>
     </tbody>
@@ -264,7 +267,6 @@ export class ${clase.name}Service {
 
 const generarMenuPrincipal = (clases: any[], srcPath: string) => {
     const menuHtmlPath = path.join(srcPath, "app.component.html");
-
     const menuHtml = `
 <nav>
   <ul>
@@ -276,12 +278,35 @@ const generarMenuPrincipal = (clases: any[], srcPath: string) => {
         .join("\n")}
   </ul>
 </nav>
-<router-outlet></router-outlet>
+    <router-outlet></router-outlet>
+    `;
+    const menuComponentTs = `
+import { Component } from '@angular/core';
+import { RouterOutlet,RouterLink } from '@angular/router';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [RouterLink,RouterOutlet],
+  templateUrl: './app.component.html',
+  styleUrl: './app.component.css'
+})
+export class AppComponent {
+  title = 'frontend';
+} 
+  `;
+
+    const menuCss = `
     `;
 
+
+   
     fs.writeFileSync(menuHtmlPath, menuHtml.trim());
+    fs.writeFileSync(path.join(srcPath, "app.component.ts"), menuComponentTs.trim());
+    fs.writeFileSync(path.join(srcPath, "app.component.css"), menuCss.trim());
     console.log(`✅ Menú principal generado: ${menuHtmlPath}`);
 };
+
 
 const generarRutas = (clases: any[], srcPath: string) => {
     const routesFilePath = path.join(srcPath, "app.routes.ts");

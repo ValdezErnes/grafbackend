@@ -72,11 +72,6 @@ const credenciales = {
     puertoBackend: "3000"
 };
 
-// Clases para el frontend
-const clases = [
-    { name: "Usuario", properties: [{ name: "Nombre", type: "string" }, { name: "Email", type: "string" }] },
-    { name: "Producto", properties: [{ name: "Nombre", type: "string" }, { name: "Precio", type: "float" }] }
-];
 
 // Llamar a la función para crear el backend
 createProjectBackend(nombreProyecto, graphModel, credenciales)
@@ -84,7 +79,7 @@ createProjectBackend(nombreProyecto, graphModel, credenciales)
         console.log("✅ Proyecto backend creado con éxito.");
 
         // Llamar a la función para crear el frontend
-        return createProjectFrontend(nombreProyecto, clases);
+        return createProjectFrontend(nombreProyecto, graphModel);
     })
     .then(() => {
         console.log("✅ Proyecto frontend creado con éxito.");

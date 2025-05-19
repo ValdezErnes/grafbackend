@@ -133,17 +133,17 @@ const credenciales = {
 
 
 // Llamar a la función para crear el backend
-createProjectBackend(nombreProyecto, graphModel, credenciales)
-    .then(() => {
-        console.log("✅ Proyecto backend creado con éxito.");
+// createProjectBackend(nombreProyecto, graphModel, credenciales)
+//     .then(() => {
+//         console.log("✅ Proyecto backend creado con éxito.");
 
-        // Llamar a la función para crear el frontend
-        return createProjectFrontend(nombreProyecto, graphModel);
-    })
-    .then(() => {
-        console.log("✅ Proyecto frontend creado con éxito.");
-    })
-    .catch((error) => {
-        console.error("❌ Error al crear los proyectos:", error);
-    });
+//         // Llamar a la función para crear el frontend
+//         return createProjectFrontend(nombreProyecto, graphModel);
+//     })
+//     .then(() => {
+//         console.log("✅ Proyecto frontend creado con éxito.");
+//     })
+//     .catch((error) => {
+//         console.error("❌ Error al crear los proyectos:", error);
+//     });
 });

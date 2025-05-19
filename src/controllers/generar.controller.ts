@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Proyecto } from "../models/proyectos.model";
 import { Versiones } from "../models/versiones.model";
 import { createProjectBackend } from "../services/crearbackend";
+import { createProjectFrontend } from "../services/crearfrontend";
 
 export const generarproyecto = async (req: Request, res: Response) => {
     const {id,idv_cu,idv_sec,idv_paq,idv_comp,idv_class,conexion} = req.body;
@@ -37,9 +38,10 @@ export const generarproyecto = async (req: Request, res: Response) => {
             res.status(404).json({ error: "Version del Diagrama de casos de uso no encontrada" });
             return;
         }
-
+        proyecto.Nombre = proyecto.Nombre.replace(/ /g, "_");
         // Creacion del boilerplate
         await createProjectBackend(proyecto.Nombre,clases.json,conexion);
+        await createProjectFrontend(proyecto.Nombre,clases.json);
         res.status(200).json({ message: "Proyecto generado correctamente" });
     } catch (error) {
         res.status(500).json({ error: "Error al generar el proyecto" });

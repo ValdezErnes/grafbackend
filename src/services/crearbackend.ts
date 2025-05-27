@@ -18,6 +18,7 @@ type Paths = {
     models: string;
     controllers: string;
     routes: string;
+    middleware: string;
 };
 
 export const executeCommand = (command:string, cwd:string) => {
@@ -45,10 +46,10 @@ const instalarDependenciasBackend = async (backendPath: string, dialecto: string
     console.log('📦 Instalando dependencias del backend...');
   
     // Paquetes principales (dependencias normales)
-    const dependencias = ['sequelize', dialecto, 'dotenv','express', 'cors'];
+    const dependencias = ['sequelize', dialecto, 'dotenv','express', 'cors','jsonwebtoken'];
   
     // Paquetes de desarrollo
-    const devDependencias = ['nodemon', 'ts-node', 'typescript', '@types/node'];
+    const devDependencias = ['nodemon', 'ts-node', 'typescript', '@types/node','@types/jsonwebtoken'];
   
   
     console.log('📦 Instalando dependencias...');
@@ -75,11 +76,12 @@ export const createProjectBackend = async (nombreProyecto: string,graphModel: an
         models: path.join(backendPath, 'src','models'),
         controllers: path.join(backendPath, 'src','controllers'),
         routes: path.join(backendPath, 'src','routes'),
+        middleware: path.join(backendPath, 'src','middleware'),
     };
 
     if (fs.existsSync(backendPath)) {
         console.log('🟡 Carpeta del proyecto ya existe, continuando...');
-        processGraphModel(graphModel, paths.models, paths.routes, paths.controllers);
+        processGraphModel(graphModel, paths.models, paths.routes, paths.controllers, paths.middleware);
         return;
     }
 
@@ -104,8 +106,49 @@ export const createProjectBackend = async (nombreProyecto: string,graphModel: an
     generarIndexGeneral(srcbackend)
     generarArchivoEnv(credenciales, backendPath);
     generarArchivoConfigDB(backendPath);
-    processGraphModel(graphModel, paths.models, paths.routes, paths.controllers);
+    processGraphModel(graphModel, paths.models, paths.routes, paths.controllers, paths.middleware);
 };
+
+const crearMiddleware = (middlewarePath: string): void => {
+    const filePath = path.join(middlewarePath, 'checkAuth.ts');
+
+    const content = `
+import { Request, Response, NextFunction } from "express";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { Usuarios } from "../models/Usuarios";
+
+const SECRET_KEY = process.env.JWT_SECRET || "secreto.01";
+
+interface CustomRequest extends Request {
+  Usuarios?: JwtPayload;
+}
+
+const checkAuth = async (req: CustomRequest, res: Response, next: NextFunction) => {
+  try {
+    const token = req.headers["authorization"];
+    if (!token) {
+      res.status(401).json({ message: "Token no proporcionado" });
+      return;
+    }
+    const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload;
+    req.body.user = decoded.User;
+    const userFound = await Usuarios.findByPk(req.body.user.No_Cuenta);
+    if (!userFound) {
+      res.status(401).json({ message: "Usuario no encontrado" });
+      return;
+    }
+    next();
+  } catch (error) {
+    res.status(403).json({ message: "Token no válido o expirado" });
+    return;
+  }
+};
+export { checkAuth };
+`
+
+    fs.writeFileSync(filePath, content);
+    console.log(`✅ Archivo de middleware generado: ${filePath}`);
+}
 
 const modificarPackageJson = (backendPath: string): void => {
     // Leer el package.json
@@ -155,9 +198,11 @@ const mapSequelizeType = (type: string): string => {
     return map[type.toLowerCase()] || 'STRING';
 };
 
-const processGraphModel = (graphModel1: any,modelsPath: string,routesPath: string,controllersPath: string): void => {
+const processGraphModel = (graphModel1: any,modelsPath: string,routesPath: string,controllersPath: string,middlewarePath: string): void => {
     console.log('📌 Procesando nodos...');
+    console.log(graphModel1)
     const graphModel = JSON.parse(graphModel1);
+    console.log("\n\ngraphModel",graphModel)
     const clases = [];
     for (const node of graphModel.nodeDataArray) {
         console.log(`🔹 Generando modelo: ${node.name}`);
@@ -190,6 +235,7 @@ const processGraphModel = (graphModel1: any,modelsPath: string,routesPath: strin
     }
     console.log('Creando relaciones por clase:', relacionesporclase);
     generarIndexModels(modelsPath, relacionesporclase, clases);
+    crearMiddleware(middlewarePath);
 };
 
 const generarArchivoModelo = (node: any,modelsPath: string): void => {
@@ -198,9 +244,8 @@ const generarArchivoModelo = (node: any,modelsPath: string): void => {
     const filePath = path.join(modelsPath, `${className}.ts`);
     
 
-    const properties = node.properties.filter((prop: any) => prop.name.toLowerCase() !== 'id').map((prop: any) => {
-        const cleanName = prop.name.replace(/\s+/g, '_'); // Reemplaza espacios por _
-        return `    ${cleanName}: {\n        type: DataTypes.${mapSequelizeType(prop.type)},\n        allowNull: false\n    }`;
+    const properties = node.properties.map((prop: any) => {
+        return `    ${prop.name}: {\n        type: DataTypes.${mapSequelizeType(prop.type)},\n        allowNull: false\n    }`;
     }).join(',\n');
 
     const content = `
@@ -323,7 +368,7 @@ import { getByID, getAll, post${className}, put${className}, deleteID } from '..
 
 const router = Router();
 
-router.get('', getAll);
+router.get('',getAll);
 router.get('/:id', getByID);
 router.post('', post${className});
 router.put('/:id', put${className});
@@ -401,73 +446,6 @@ const generarIndexModels = (modelsPath: string, relacionesporclase: any, clases:
             }
         }
     }
-    
-    // // Ahora buscamos relaciones adicionales basadas en propiedades con FK
-    // console.log('🔍 Buscando relaciones adicionales por claves foráneas...');
-    // let additionalRelationsCode = '';
-    
-    // // Mapa para registrar relaciones ya generadas y evitar duplicados
-    // const generatedRelations = new Set();
-    
-    // for (const clase of clases) {
-    //     if (clase.properties) {
-    //         // Filtrar propiedades que son claves foráneas
-    //         const foreignKeyProps = clase.properties.filter((prop: any) => prop.isForeignKey === true);
-            
-    //         for (const fkProp of foreignKeyProps) {
-    //             // Obtener la clase de origen
-    //             const sourceClass = clases.find((c: any) => 
-    //                 c.name === fkProp.fromClass || c.key === fkProp.fromKey
-    //             );
-                
-    //             if (sourceClass) {
-    //                 // Crear un identificador único para esta relación
-    //                 const relationKey = `${sourceClass.name}:${clase.name}:${fkProp.name}`;
-                    
-    //                 // Solo agregar la relación si no ha sido generada antes
-    //                 if (!generatedRelations.has(relationKey)) {
-    //                     additionalRelationsCode += `\n// Relación por FK entre ${sourceClass.name} y ${clase.name}\n`;
-    //                     additionalRelationsCode += `${sourceClass.name}.hasMany(${clase.name}, { foreignKey: "${fkProp.name}" });\n`;
-    //                     additionalRelationsCode += `${clase.name}.belongsTo(${sourceClass.name}, { foreignKey: "${fkProp.name}" });\n`;
-                        
-    //                     generatedRelations.add(relationKey);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    
-    // // Si hay relaciones adicionales y hay relaciones principales, verificar que no sean duplicadas
-    // if (additionalRelationsCode && relacionesCode) {
-    //     console.log('⚠️ Encontradas relaciones adicionales por FK que podrían duplicar las de agregación/composición');
-    //     console.log('⚙️ Solo se incluirán si no son redundantes');
-        
-    //     // Por simplicidad, usamos las relaciones adicionales solo si no hay relaciones principales
-    //     // En una implementación completa, deberías verificar cada relación para evitar duplicados
-    // } else if (additionalRelationsCode) {
-    //     relacionesCode += additionalRelationsCode;
-    // }
-    
-    // // Si aún no hay relaciones, usamos el método más básico
-    // if (!relacionesCode) {
-    //     console.log('⚠️ No se encontraron relaciones específicas, usando método básico');
-    //     for (const fromKey in relacionesporclase) {
-    //         const fromClass = clases.find((clase: any) => clase.key == fromKey);
-    //         if (fromClass) {
-    //             for (const toClassName of relacionesporclase[fromKey]) {
-    //                 const toClass = clases.find((clase: any) => clase.name == toClassName);
-    //                 if (toClass) {
-    //                     relacionesCode += `\n// Relación entre ${fromClass.name} y ${toClass.name}\n`;
-    //                     relacionesCode += `${fromClass.name}.hasMany(${toClass.name}, { foreignKey: "ID_${fromClass.name}" });\n`;
-    //                     relacionesCode += `${toClass.name}.belongsTo(${fromClass.name}, { foreignKey: "ID_${fromClass.name}" });\n`;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-    
-    // console.log('Importaciones:', imports);
-    // console.log('Relaciones generadas:', relacionesCode);
     
     const content = `
 import { sequelize, ensureDatabaseExists, checkSequelizeConnection } from "../config/database";

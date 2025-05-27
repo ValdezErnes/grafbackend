@@ -1,4 +1,5 @@
 import { sequelize } from "../config/mysql";
+import { Credenciales } from "./credenciales.model";
 import { Diagrama } from "./diagrama.model";
 import { Proyecto } from "./proyectos.model";
 import { Usuarios } from "./usuarios.model";
@@ -12,6 +13,10 @@ Versiones.belongsTo(Proyecto, { foreignKey: "ID_Proyecto" });
 // Un tipo de diagrama puede tener muchas versiones
 Diagrama.hasMany(Versiones, { foreignKey: "ID_Tipo" });
 Versiones.belongsTo(Diagrama, { foreignKey: "ID_Tipo" });
+
+// Un proyecto puede tener muchas credenciales
+Proyecto.hasMany(Credenciales, { foreignKey: "ID_Proyecto" });
+Credenciales.belongsTo(Proyecto, { foreignKey: "ID_Proyecto" });
 
 // Un tipo de diagrama puede tener muchas versiones
 // Usuarios.hasMany(Versiones, { foreignKey: "ID_Usuario" });

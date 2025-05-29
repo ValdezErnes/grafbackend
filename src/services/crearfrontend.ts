@@ -25,7 +25,7 @@ const crearCarpetaSiNoExiste = (ruta: string) => {
     }
 };
 
-export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string): Promise<void> => {
+export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string, puertoBackend:string): Promise<void> => {
     const desktopPath = path.join(os.homedir(), "Escriotorio");
     const projectFolderPath = path.join(desktopPath, nombreProyecto);
     const frontendPath = path.join(projectFolderPath, `${nombreProyecto}-frontend`);
@@ -66,9 +66,14 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     generarAppConfig(srcPath);
 
     console.log("📝 Generando archivo de entorno...");
-    generarEnvironment(srcPath);
+    generarEnvironment(srcPath,puertoBackend);
+
+    generarLogin(componentsPath);
+    generarRegister(componentsPath);
+    generarAuthService(servicesPath);
 
     console.log("✅ Proyecto frontend generado correctamente.");
+
 };
 
 const generarComponente = (clase: any, componentsPath: string) => {
@@ -716,23 +721,30 @@ main {
 const generarRutas = (clases: any[], srcPath: string) => {
     const routesFilePath = path.join(srcPath, "app.routes.ts");
 
+    const imports = [
+        ...clases.map(
+            (clase) =>
+                `import { ${clase.name}Component } from './components/${clase.name.toLowerCase()}/${clase.name.toLowerCase()}.component';`
+        ),
+        `import { LoginComponent } from './components/login/login.component';`,
+        `import { RegisterComponent } from './components/register/register.component';`
+    ];
+
     const routesContent = `
 import { Routes } from '@angular/router';
 
-${clases
-        .map(
-            (clase) =>
-                `import { ${clase.name}Component } from './components/${clase.name.toLowerCase()}/${clase.name.toLowerCase()}.component';`
-        )
-        .join("\n")}
+${imports.join("\n")}
 
 export const routes: Routes = [
   ${clases
-        .map(
-            (clase) =>
-                `{ path: '${clase.name.toLowerCase()}', component: ${clase.name}Component }`
-        )
-        .join(",\n  ")}
+    .map(
+      (clase) =>
+        `{ path: '${clase.name.toLowerCase()}', component: ${clase.name}Component }`
+    )
+    .join(",\n  ")},
+  { path: 'login', component: LoginComponent },
+  { path: 'register', component: RegisterComponent },
+  { path: '', redirectTo: 'login', pathMatch: 'full' }
 ];
     `;
 
@@ -760,7 +772,7 @@ providers: [
   console.log(`✅ Configuración generada: ${configPath}`);
 };
 
-export const generarEnvironment = (srcPath: string) => {
+export const generarEnvironment = (srcPath: string,puertoBackend:string) => {
   const envDir = path.join(srcPath, 'environments');
   const envFilePath = path.join(envDir, 'environment.ts');
 
@@ -769,11 +781,243 @@ export const generarEnvironment = (srcPath: string) => {
 
   const envContent = `
 export const environment = {
-  BackendPORT: 3000,
+  BackendPORT: ${puertoBackend || 3000},
   BackendURL: 'http://localhost'
 };
   `.trim();
 
   fs.writeFileSync(envFilePath, envContent);
   console.log(`✅ Archivo environment.ts generado en: ${envFilePath}`);
+};
+
+const generarLogin = (componentsPath: string) => {
+    const componentPath = path.join(componentsPath, "login");
+    crearCarpetaSiNoExiste(componentPath);
+
+    // TypeScript
+    const componentTs = `
+import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { AuthService } from '../../services/auth.service';
+
+@Component({
+  selector: 'app-login',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './login.component.html',
+  styleUrl: './login.component.css'
+})
+export class LoginComponent {
+  username = '';
+  password = '';
+  error = '';
+
+  constructor(private authService: AuthService) {}
+
+  login() {
+    this.authService.login(this.username, this.password).subscribe({
+      next: (res) => {
+        // Manejar éxito (guardar token, redirigir, etc.)
+      },
+      error: (err) => {
+        this.error = 'Credenciales inválidas';
+      }
+    });
+  }
+}
+    `;
+
+    // HTML
+    const componentHtml = `
+<div class="login-container">
+  <h2>Iniciar Sesión</h2>
+  <form (ngSubmit)="login()">
+    <label>Usuario:
+      <input [(ngModel)]="username" name="username" required />
+    </label>
+    <label>Contraseña:
+      <input [(ngModel)]="password" name="password" type="password" required />
+    </label>
+    <button type="submit">Entrar</button>
+    <div *ngIf="error" class="error">{{error}}</div>
+  </form>
+</div>
+    `;
+
+    // CSS
+    const componentCss = `
+.login-container {
+  max-width: 400px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+label {
+  display: block;
+  margin-bottom: 1rem;
+}
+input {
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 0.3rem;
+}
+button {
+  width: 100%;
+  padding: 0.7rem;
+  background: #3949ab;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.error {
+  color: #d32f2f;
+  margin-top: 1rem;
+}
+    `;
+
+    fs.writeFileSync(path.join(componentPath, "login.component.ts"), componentTs.trim());
+    fs.writeFileSync(path.join(componentPath, "login.component.html"), componentHtml.trim());
+    fs.writeFileSync(path.join(componentPath, "login.component.css"), componentCss.trim());
+    console.log(`✅ Componente Login generado: ${componentPath}`);
+};
+
+const generarRegister = (componentsPath: string) => {
+    const componentPath = path.join(componentsPath, "register");
+    crearCarpetaSiNoExiste(componentPath);
+
+    // TypeScript
+    const componentTs = `
+import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { AuthService } from '../../services/auth.service';
+
+@Component({
+  selector: 'app-register',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './register.component.html',
+  styleUrl: './register.component.css'
+})
+export class RegisterComponent {
+  username = '';
+  password = '';
+  error = '';
+  success = '';
+
+  constructor(private authService: AuthService) {}
+
+  register() {
+    this.authService.register(this.username, this.password).subscribe({
+      next: (res) => {
+        this.success = 'Usuario registrado correctamente';
+        this.error = '';
+      },
+      error: (err) => {
+        this.error = 'No se pudo registrar';
+        this.success = '';
+      }
+    });
+  }
+}
+    `;
+
+    // HTML
+    const componentHtml = `
+<div class="register-container">
+  <h2>Registro</h2>
+  <form (ngSubmit)="register()">
+    <label>Usuario:
+      <input [(ngModel)]="username" name="username" required />
+    </label>
+    <label>Contraseña:
+      <input [(ngModel)]="password" name="password" type="password" required />
+    </label>
+    <button type="submit">Registrar</button>
+    <div *ngIf="error" class="error">{{error}}</div>
+    <div *ngIf="success" class="success">{{success}}</div>
+  </form>
+</div>
+    `;
+
+    // CSS
+    const componentCss = `
+.register-container {
+  max-width: 400px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+label {
+  display: block;
+  margin-bottom: 1rem;
+}
+input {
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 0.3rem;
+}
+button {
+  width: 100%;
+  padding: 0.7rem;
+  background: #3949ab;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+.error {
+  color: #d32f2f;
+  margin-top: 1rem;
+}
+.success {
+  color: #388e3c;
+  margin-top: 1rem;
+}
+    `;
+
+    fs.writeFileSync(path.join(componentPath, "register.component.ts"), componentTs.trim());
+    fs.writeFileSync(path.join(componentPath, "register.component.html"), componentHtml.trim());
+    fs.writeFileSync(path.join(componentPath, "register.component.css"), componentCss.trim());
+    console.log(`✅ Componente Register generado: ${componentPath}`);
+};
+
+const generarAuthService = (servicesPath: string) => {
+    const serviceFilePath = path.join(servicesPath, "auth.service.ts");
+    const serviceContent = `
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../environments/environment';
+
+const BackendPORT = environment.BackendPORT || 3000;
+const BackendURL = environment.BackendURL || "http://localhost";
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private apiUrl = \`\${BackendURL}:\${BackendPORT}/auth\`;
+
+  constructor(private http: HttpClient) {}
+
+  login(username: string, password: string): Observable<any> {
+    return this.http.post<any>(\`\${this.apiUrl}/login\`, { username, password });
+  }
+
+  register(username: string, password: string): Observable<any> {
+    return this.http.post<any>(\`\${this.apiUrl}/register\`, { username, password });
+  }
+}
+    `;
+    fs.writeFileSync(serviceFilePath, serviceContent.trim());
+    console.log(`✅ Servicio de autenticación generado: ${serviceFilePath}`);
 };

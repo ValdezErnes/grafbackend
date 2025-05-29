@@ -75,7 +75,7 @@ export const generarproyecto = async (req: Request, res: Response) => {
         const jsonpaquetes = JSON.parse(paquetes.json);
         // Creacion del boilerplate
         await createProjectBackend(proyecto.Nombre, graphModelString, conexion);
-        await createProjectFrontend(proyecto.Nombre, graphModelString);
+        await createProjectFrontend(proyecto.Nombre, graphModelString,conexion.puertoBackend);
         await generarcarpetas(proyecto.Nombre, jsonpaquetes);
 
         res.status(200).json({ message: "Proyecto generado correctamente" });

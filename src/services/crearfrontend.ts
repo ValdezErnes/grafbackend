@@ -59,6 +59,8 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     console.log("📝 Generando menú principal...");
     generarMenuPrincipal(clases, srcPath);
 
+    generarAppComponent(clases,srcPath)
+
     console.log("📝 Generando rutas...");
     generarRutas(clases, srcPath);
 
@@ -563,9 +565,10 @@ export class ${clase.name}Service {
 };
 
 const generarMenuPrincipal = (clases: any[], srcPath: string) => {
-  const menuHtmlPath = path.join(srcPath, "app.component.html");
+  const menuHtmlPath = path.join(srcPath, "menu.component.html");
   const menuHtml = `
-<header>
+
+  <header>
   <button class="menu-toggle" (click)="toggleMenu()">☰ Clases</button>
   <nav [class.open]="menuOpen">
     <div class="menu-grid">
@@ -579,26 +582,29 @@ const generarMenuPrincipal = (clases: any[], srcPath: string) => {
         .join("\n")}
     </div>
   </nav>
-</header>
-
-<main>
-  <router-outlet></router-outlet>
-</main>
+  </header>
+@if(!isMenuRoute()){
+  <main>
+    <router-outlet></router-outlet>
+  </main>
+}
 `;
 
   const menuComponentTs = `
 import { Component } from '@angular/core';
-import { RouterLink, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterOutlet } from '@angular/router';
 
 @Component({
-  selector: 'app-root',
+  selector: 'app-menu',
   standalone: true,
   imports: [RouterLink, RouterOutlet],
-  templateUrl: './app.component.html',
-  styleUrl: './app.component.css'
+  templateUrl: './menu.component.html',
+  styleUrl: './menu.component.css'
 })
-export class AppComponent {
+export class MenuComponent {
   menuOpen = true;
+
+  constructor(private router: Router) {}
 
   toggleMenu() {
     this.menuOpen = !this.menuOpen;
@@ -607,6 +613,164 @@ export class AppComponent {
   autoCloseMenu() {
     this.menuOpen = false;
   }
+  isMenuRoute(): boolean {
+    return this.router.url === '/home';
+  }   
+}
+`;
+
+  const menuCss = `
+header {
+  background: linear-gradient(135deg, #1a237e, #3949ab);
+  color: white;
+  padding: 1rem;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.menu-toggle {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  padding: 0.8rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.menu-toggle:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-1px);
+}
+
+nav {
+  display: none;
+  margin-top: 1rem;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 1rem;
+  backdrop-filter: blur(10px);
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+nav.open {
+  display: block;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  padding: 0.5rem;
+}
+
+.menu-grid a {
+  color: white;
+  background: rgba(255,255,255,0.1);
+  padding: 1rem;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.menu-grid a:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  border-color: rgba(255,255,255,0.2);
+}
+
+main {
+  padding: 2rem;
+  background: #f5f7fa;
+  min-height: calc(100vh - 80px);
+}
+
+@media (max-width: 768px) {
+  .menu-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-toggle {
+    width: 100%;
+    justify-content: center;
+  }
+
+  main {
+    padding: 1rem;
+  }
+}
+`;
+
+  fs.writeFileSync(menuHtmlPath, menuHtml.trim());
+  fs.writeFileSync(path.join(srcPath, "menu.component.ts"), menuComponentTs.trim());
+  fs.writeFileSync(path.join(srcPath, "menu.component.css"), menuCss.trim());
+  console.log(`✅ Menú principal generado en columnas: ${menuHtmlPath}`);
+};
+const generarAppComponent = (clases: any[], srcPath: string) => {
+  const menuHtmlPath = path.join(srcPath, "app.component.html");
+  const menuHtml = `
+  @if(isAuthRouteRegister()) {
+    <app-register></app-register>
+  }@else if(isAuthRoute()){
+    <app-login></app-login>
+  }@else{
+    <app-menu></app-menu>
+  } 
+`;
+
+  const menuComponentTs = `
+import { Component } from '@angular/core';
+import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import {MenuComponent} from './menu.component'
+import { LoginComponent } from './components/login/login.component';
+import { RegisterComponent } from './components/register/register.component';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [MenuComponent,LoginComponent,RegisterComponent],
+  templateUrl: './app.component.html',
+  styleUrl: './app.component.css'
+})
+export class AppComponent {
+  menuOpen = true;
+
+  constructor(private router: Router) {}
+
+  toggleMenu() {
+    this.menuOpen = !this.menuOpen;
+  }
+
+  autoCloseMenu() {
+    this.menuOpen = false;
+  }
+
+  isAuthRoute(): boolean {
+    return this.router.url === '/login';
+  }
+  isAuthRouteRegister(): boolean {
+    return  this.router.url === '/register';
+  }
+
 }
 `;
 
@@ -727,7 +891,8 @@ const generarRutas = (clases: any[], srcPath: string) => {
                 `import { ${clase.name}Component } from './components/${clase.name.toLowerCase()}/${clase.name.toLowerCase()}.component';`
         ),
         `import { LoginComponent } from './components/login/login.component';`,
-        `import { RegisterComponent } from './components/register/register.component';`
+        `import { RegisterComponent } from './components/register/register.component';`,
+        `import {MenuComponent} from './menu.component';`
     ];
 
     const routesContent = `
@@ -744,6 +909,7 @@ export const routes: Routes = [
     .join(",\n  ")},
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
+  { path: 'home', component: MenuComponent },
   { path: '', redirectTo: 'login', pathMatch: 'full' }
 ];
     `;
@@ -799,6 +965,7 @@ const generarLogin = (componentsPath: string) => {
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
@@ -813,17 +980,22 @@ export class LoginComponent {
   password = '';
   error = '';
 
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService, private router: Router) {}
 
   login() {
     this.authService.login(this.username, this.password).subscribe({
       next: (res) => {
-        // Manejar éxito (guardar token, redirigir, etc.)
+        // Aquí puedes guardar el token si lo necesitas
+        this.router.navigate(['/home']);
       },
       error: (err) => {
         this.error = 'Credenciales inválidas';
       }
     });
+  }
+
+  goToRegister() {
+    this.router.navigate(['/register']);
   }
 }
     `;
@@ -842,6 +1014,10 @@ export class LoginComponent {
     <button type="submit">Entrar</button>
     <div *ngIf="error" class="error">{{error}}</div>
   </form>
+  <div class="register-link">
+    ¿No tienes cuenta?
+    <a (click)="goToRegister()" style="cursor:pointer;color:#3949ab;text-decoration:underline;">Regístrate aquí</a>
+  </div>
 </div>
     `;
 
@@ -877,6 +1053,11 @@ button {
 .error {
   color: #d32f2f;
   margin-top: 1rem;
+}
+.register-link {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 1rem;
 }
     `;
 

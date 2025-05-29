@@ -68,9 +68,17 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     console.log("📝 Generando archivo de entorno...");
     generarEnvironment(srcPath,puertoBackend);
 
-    generarLogin(componentsPath);
-    generarRegister(componentsPath);
-    generarAuthService(servicesPath);
+    // Buscar la clase de usuarios para generar login/register dinámico
+    const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
+    const userClass = clases.find((clase: any) => 
+        userClassNames.some(className => 
+            clase.name && clase.name.toLowerCase().includes(className.toLowerCase())
+        )
+    );
+
+    generarLogin(componentsPath, userClass);
+    generarRegister(componentsPath, userClass);
+    generarAuthService(servicesPath, userClass);
 
     console.log("✅ Proyecto frontend generado correctamente.");
 
@@ -520,7 +528,7 @@ const generarServicio = (clase: any, servicesPath: string) => {
 
     const serviceContent = `
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 
@@ -536,24 +544,32 @@ export class ${clase.name}Service {
 
   constructor(private http: HttpClient) {}
 
+  private getHeaders(): HttpHeaders {
+    const token = sessionStorage.getItem('token');
+    return new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': token || ''
+    });
+  }
+
   getAll(): Observable<any[]> {
-    return this.http.get<any[]>(this.apiUrl);
+    return this.http.get<any[]>(this.apiUrl, { headers: this.getHeaders() });
   }
 
   getById(id: number): Observable<any> {
-    return this.http.get<any>(\`\${this.apiUrl}/\${id}\`);
+    return this.http.get<any>(\`\${this.apiUrl}/\${id}\`, { headers: this.getHeaders() });
   }
 
   create(data: any): Observable<any> {
-    return this.http.post<any>(this.apiUrl, data);
+    return this.http.post<any>(this.apiUrl, data, { headers: this.getHeaders() });
   }
 
   update(id: number, data: any): Observable<any> {
-    return this.http.put<any>(\`\${this.apiUrl}/\${id}\`, data);
+    return this.http.put<any>(\`\${this.apiUrl}/\${id}\`, data, { headers: this.getHeaders() });
   }
 
   delete(id: number): Observable<any> {
-    return this.http.delete<any>(\`\${this.apiUrl}/\${id}\`);
+    return this.http.delete<any>(\`\${this.apiUrl}/\${id}\`, { headers: this.getHeaders() });
   }
 }
     `;
@@ -790,38 +806,67 @@ export const environment = {
   console.log(`✅ Archivo environment.ts generado en: ${envFilePath}`);
 };
 
-const generarLogin = (componentsPath: string) => {
+const generarLogin = (componentsPath: string, userClass?: any) => {
     const componentPath = path.join(componentsPath, "login");
     crearCarpetaSiNoExiste(componentPath);
+
+    // Buscar los nombres de los campos de username y password
+    let usernameField = 'username';
+    let passwordField = 'password';
+    
+    if (userClass && userClass.properties) {
+        const usernameProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('username') || 
+            prop.name.toLowerCase().includes('usuario') ||
+            prop.name.toLowerCase().includes('user')
+        );
+        const passwordProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('password') || 
+            prop.name.toLowerCase().includes('contraseña') ||
+            prop.name.toLowerCase().includes('clave')
+        );
+        
+        if (usernameProperty) usernameField = usernameProperty.name;
+        if (passwordProperty) passwordField = passwordProperty.name;
+    }
 
     // TypeScript
     const componentTs = `
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './login.component.html',
   styleUrl: './login.component.css'
 })
 export class LoginComponent {
-  username = '';
-  password = '';
+  ${usernameField} = '';
+  ${passwordField} = '';
   error = '';
 
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService, private router: Router) {}
 
   login() {
-    this.authService.login(this.username, this.password).subscribe({
-      next: (res) => {
-        // Manejar éxito (guardar token, redirigir, etc.)
+    this.authService.login(this.${usernameField}, this.${passwordField}).subscribe({
+      next: (res: any) => {
+        // Guardar token del header o del body
+        const token = res.token || res.headers?.get('authorization');
+        if (token) {
+          sessionStorage.setItem('token', token);
+          console.log("Token guardado en sessionStorage:", token);
+          this.router.navigate(['/']);
+        }
+        this.error = '';
       },
       error: (err) => {
         this.error = 'Credenciales inválidas';
+        console.error('Error en login:', err);
       }
     });
   }
@@ -833,14 +878,17 @@ export class LoginComponent {
 <div class="login-container">
   <h2>Iniciar Sesión</h2>
   <form (ngSubmit)="login()">
-    <label>Usuario:
-      <input [(ngModel)]="username" name="username" required />
+    <label>${usernameField}:
+      <input [(ngModel)]="${usernameField}" name="${usernameField}" required />
     </label>
-    <label>Contraseña:
-      <input [(ngModel)]="password" name="password" type="password" required />
+    <label>${passwordField}:
+      <input [(ngModel)]="${passwordField}" name="${passwordField}" type="password" required />
     </label>
     <button type="submit">Entrar</button>
     <div *ngIf="error" class="error">{{error}}</div>
+    <p class="register-link">
+      ¿No tienes cuenta? <a routerLink="/register">Regístrate aquí</a>
+    </p>
   </form>
 </div>
     `;
@@ -855,28 +903,75 @@ export class LoginComponent {
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
+
+h2 {
+  text-align: center;
+  color: #1a237e;
+  margin-bottom: 1.5rem;
+}
+
 label {
   display: block;
   margin-bottom: 1rem;
+  color: #2c3e50;
+  font-weight: 500;
 }
+
 input {
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.8rem;
   margin-top: 0.3rem;
+  border: 2px solid #e0e6ed;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
 }
+
+input:focus {
+  border-color: #3949ab;
+  outline: none;
+}
+
 button {
   width: 100%;
-  padding: 0.7rem;
-  background: #3949ab;
+  padding: 0.8rem;
+  background: linear-gradient(135deg, #1a237e, #3949ab);
   color: #fff;
   border: none;
   border-radius: 6px;
   font-weight: 600;
   margin-top: 1rem;
+  cursor: pointer;
+  transition: transform 0.3s ease;
 }
+
+button:hover {
+  transform: translateY(-2px);
+}
+
 .error {
   color: #d32f2f;
   margin-top: 1rem;
+  text-align: center;
+  padding: 0.5rem;
+  background: #ffebee;
+  border-radius: 4px;
+}
+
+.register-link {
+  text-align: center;
+  margin-top: 1rem;
+  color: #666;
+}
+
+.register-link a {
+  color: #3949ab;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.register-link a:hover {
+  text-decoration: underline;
 }
     `;
 
@@ -886,41 +981,82 @@ button {
     console.log(`✅ Componente Login generado: ${componentPath}`);
 };
 
-const generarRegister = (componentsPath: string) => {
+const generarRegister = (componentsPath: string, userClass?: any) => {
     const componentPath = path.join(componentsPath, "register");
     crearCarpetaSiNoExiste(componentPath);
+
+    // Buscar los nombres de los campos
+    let usernameField = 'username';
+    let passwordField = 'password';
+    let allFields: any[] = [];
+    
+    if (userClass && userClass.properties) {
+        allFields = userClass.properties;
+        
+        const usernameProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('username') || 
+            prop.name.toLowerCase().includes('usuario') ||
+            prop.name.toLowerCase().includes('user')
+        );
+        const passwordProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('password') || 
+            prop.name.toLowerCase().includes('contraseña') ||
+            prop.name.toLowerCase().includes('clave')
+        );
+        
+        if (usernameProperty) usernameField = usernameProperty.name;
+        if (passwordProperty) passwordField = passwordProperty.name;
+    }
+
+    // Generar variables para todos los campos
+    const allFieldsVariables = allFields.map(field => `  ${field.name} = '';`).join('\n');
+    const allFieldsParams = allFields.map(field => `this.${field.name}`).join(', ');
 
     // TypeScript
     const componentTs = `
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './register.component.html',
   styleUrl: './register.component.css'
 })
 export class RegisterComponent {
-  username = '';
-  password = '';
+${allFieldsVariables}
   error = '';
   success = '';
 
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService, private router: Router) {}
 
   register() {
-    this.authService.register(this.username, this.password).subscribe({
+    // Validar campos obligatorios
+    if (!this.${usernameField} || !this.${passwordField}) {
+      this.error = 'El ${usernameField} y ${passwordField} son requeridos';
+      return;
+    }
+
+    const userData = {
+${allFields.map(field => `      ${field.name}: this.${field.name}`).join(',\n')}
+    };
+
+    this.authService.register(userData).subscribe({
       next: (res) => {
         this.success = 'Usuario registrado correctamente';
         this.error = '';
+        setTimeout(() => {
+          this.router.navigate(['/login']);
+        }, 2000);
       },
       error: (err) => {
-        this.error = 'No se pudo registrar';
+        this.error = err.error?.message || 'No se pudo registrar el usuario';
         this.success = '';
+        console.error('Error en registro:', err);
       }
     });
   }
@@ -930,17 +1066,17 @@ export class RegisterComponent {
     // HTML
     const componentHtml = `
 <div class="register-container">
-  <h2>Registro</h2>
+  <h2>Registro de Usuario</h2>
   <form (ngSubmit)="register()">
-    <label>Usuario:
-      <input [(ngModel)]="username" name="username" required />
-    </label>
-    <label>Contraseña:
-      <input [(ngModel)]="password" name="password" type="password" required />
-    </label>
+${allFields.map(field => `    <label>${field.name}:
+      <input [(ngModel)]="${field.name}" name="${field.name}" ${field.name === passwordField ? 'type="password"' : ''} ${field.name === usernameField || field.name === passwordField ? 'required' : ''} />
+    </label>`).join('\n')}
     <button type="submit">Registrar</button>
     <div *ngIf="error" class="error">{{error}}</div>
     <div *ngIf="success" class="success">{{success}}</div>
+    <p class="login-link">
+      ¿Ya tienes cuenta? <a routerLink="/login">Inicia sesión aquí</a>
+    </p>
   </form>
 </div>
     `;
@@ -948,39 +1084,91 @@ export class RegisterComponent {
     // CSS
     const componentCss = `
 .register-container {
-  max-width: 400px;
+  max-width: 450px;
   margin: 2rem auto;
   padding: 2rem;
   background: #fff;
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
+
+h2 {
+  text-align: center;
+  color: #1a237e;
+  margin-bottom: 1.5rem;
+}
+
 label {
   display: block;
   margin-bottom: 1rem;
+  color: #2c3e50;
+  font-weight: 500;
 }
+
 input {
   width: 100%;
-  padding: 0.5rem;
+  padding: 0.8rem;
   margin-top: 0.3rem;
+  border: 2px solid #e0e6ed;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
 }
+
+input:focus {
+  border-color: #3949ab;
+  outline: none;
+}
+
 button {
   width: 100%;
-  padding: 0.7rem;
-  background: #3949ab;
+  padding: 0.8rem;
+  background: linear-gradient(135deg, #1a237e, #3949ab);
   color: #fff;
   border: none;
   border-radius: 6px;
   font-weight: 600;
   margin-top: 1rem;
+  cursor: pointer;
+  transition: transform 0.3s ease;
 }
+
+button:hover {
+  transform: translateY(-2px);
+}
+
 .error {
   color: #d32f2f;
   margin-top: 1rem;
+  text-align: center;
+  padding: 0.5rem;
+  background: #ffebee;
+  border-radius: 4px;
 }
+
 .success {
   color: #388e3c;
   margin-top: 1rem;
+  text-align: center;
+  padding: 0.5rem;
+  background: #e8f5e8;
+  border-radius: 4px;
+}
+
+.login-link {
+  text-align: center;
+  margin-top: 1rem;
+  color: #666;
+}
+
+.login-link a {
+  color: #3949ab;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.login-link a:hover {
+  text-decoration: underline;
 }
     `;
 
@@ -990,11 +1178,32 @@ button {
     console.log(`✅ Componente Register generado: ${componentPath}`);
 };
 
-const generarAuthService = (servicesPath: string) => {
+const generarAuthService = (servicesPath: string, userClass?: any) => {
     const serviceFilePath = path.join(servicesPath, "auth.service.ts");
+    
+    // Buscar los nombres de los campos de username y password
+    let usernameField = 'username';
+    let passwordField = 'password';
+    
+    if (userClass && userClass.properties) {
+        const usernameProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('username') || 
+            prop.name.toLowerCase().includes('usuario') ||
+            prop.name.toLowerCase().includes('user')
+        );
+        const passwordProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('password') || 
+            prop.name.toLowerCase().includes('contraseña') ||
+            prop.name.toLowerCase().includes('clave')
+        );
+        
+        if (usernameProperty) usernameField = usernameProperty.name;
+        if (passwordProperty) passwordField = passwordProperty.name;
+    }
+    
     const serviceContent = `
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../environments/environment';
 
@@ -1009,12 +1218,40 @@ export class AuthService {
 
   constructor(private http: HttpClient) {}
 
-  login(username: string, password: string): Observable<any> {
-    return this.http.post<any>(\`\${this.apiUrl}/login\`, { username, password });
+  private getHeaders(): HttpHeaders {
+    return new HttpHeaders({
+      'Content-Type': 'application/json'
+    });
   }
 
-  register(username: string, password: string): Observable<any> {
-    return this.http.post<any>(\`\${this.apiUrl}/register\`, { username, password });
+  login(${usernameField}: string, ${passwordField}: string): Observable<any> {
+    return this.http.post<any>(\`\${this.apiUrl}/login\`, { 
+      ${usernameField}, 
+      ${passwordField} 
+    }, { 
+      headers: this.getHeaders(),
+      observe: 'response' 
+    });
+  }
+
+  register(userData: any): Observable<any> {
+    return this.http.post<any>(\`\${this.apiUrl}/register\`, userData, { 
+      headers: this.getHeaders() 
+    });
+  }
+
+  verifyToken(): Observable<any> {
+    const token = sessionStorage.getItem('token');
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Authorization': token || ''
+    });
+    
+    return this.http.get<any>(\`\${this.apiUrl}/verify\`, { headers });
+  }
+
+  logout(): void {
+    sessionStorage.removeItem('token');
   }
 }
     `;

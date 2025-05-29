@@ -109,18 +109,21 @@ export const createProjectBackend = async (nombreProyecto: string,graphModel: an
     processGraphModel(graphModel, paths.models, paths.routes, paths.controllers, paths.middleware);
 };
 
-const crearMiddleware = (middlewarePath: string): void => {
+const crearMiddleware = (middlewarePath: string, userClass?: any): void => {
     const filePath = path.join(middlewarePath, 'checkAuth.ts');
+
+    // Usar la clase de usuario encontrada o usar 'Users' por defecto
+    const userClassName = userClass ? userClass.name : 'Users';
 
     const content = `
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
-import { Usuarios } from "../models/Usuarios";
+import { ${userClassName} } from "../models/${userClassName}";
 
 const SECRET_KEY = process.env.JWT_SECRET || "secreto.01";
 
 interface CustomRequest extends Request {
-  Usuarios?: JwtPayload;
+  user?: JwtPayload;
 }
 
 const checkAuth = async (req: CustomRequest, res: Response, next: NextFunction) => {
@@ -130,19 +133,23 @@ const checkAuth = async (req: CustomRequest, res: Response, next: NextFunction) 
       res.status(401).json({ message: "Token no proporcionado" });
       return;
     }
+    
     const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload;
-    req.body.user = decoded.User;
-    const userFound = await Usuarios.findByPk(req.body.user.No_Cuenta);
+    req.user = decoded;
+    
+    const userFound = await ${userClassName}.findByPk(decoded.id);
     if (!userFound) {
       res.status(401).json({ message: "Usuario no encontrado" });
       return;
     }
+    
     next();
   } catch (error) {
     res.status(403).json({ message: "Token no válido o expirado" });
     return;
   }
 };
+
 export { checkAuth };
 `
 
@@ -235,8 +242,201 @@ const processGraphModel = (graphModel1: any,modelsPath: string,routesPath: strin
     }
     console.log('Creando relaciones por clase:', relacionesporclase);
     generarIndexModels(modelsPath, relacionesporclase, clases);
-    crearMiddleware(middlewarePath);
+    
+    // Buscar la clase de usuarios para pasarla al generador de login
+    const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
+    const userClass = clases.find((clase: any) => 
+        userClassNames.some(className => 
+            clase.name && clase.name.toLowerCase().includes(className.toLowerCase())
+        )
+    );
+    
+    crearMiddleware(middlewarePath, userClass);
+    generarLogin(controllersPath, userClass);
+    generarRutasAuth(routesPath);
 };
+
+const generarRutasAuth = (routesPath: string): void => {
+    const filePath = path.join(routesPath, 'auth.ts');
+    const content = `
+import { Router } from 'express';
+import { loginCtrl, registerCtrl, verifyToken } from '../controllers/auth';
+
+const router = Router();
+
+router.post('/login', loginCtrl);
+router.post('/register', registerCtrl);
+router.get('/verify', verifyToken);
+
+export { router };
+`;
+    fs.writeFileSync(filePath, content.trim());
+    console.log(`✅ Rutas de autenticación generadas: ${filePath}`);
+}
+
+const generarLogin = (controllersPath: string, userClass?: any): void => {
+    const filePath = path.join(controllersPath, 'auth.ts');
+    
+    // Usar la clase de usuario encontrada o usar 'Users' por defecto
+    const userClassName = userClass ? userClass.name : 'Users';
+    
+    // Buscar los nombres de los campos de username y password
+    let usernameField = 'username';
+    let passwordField = 'password';
+    let allFields: any[] = [];
+    
+    if (userClass && userClass.properties) {
+        allFields = userClass.properties;
+        
+        const usernameProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('username') || 
+            prop.name.toLowerCase().includes('usuario') ||
+            prop.name.toLowerCase().includes('user')
+        );
+        const passwordProperty = userClass.properties.find((prop: any) => 
+            prop.name.toLowerCase().includes('password') || 
+            prop.name.toLowerCase().includes('contraseña') ||
+            prop.name.toLowerCase().includes('clave')
+        );
+        
+        if (usernameProperty) usernameField = usernameProperty.name;
+        if (passwordProperty) passwordField = passwordProperty.name;
+    }
+    
+    // Generar la destructuración de todos los campos para el registro
+    const allFieldNames = allFields.map(field => field.name).join(', ');
+    const fieldValidations = allFields
+        .filter(field => field.name === usernameField || field.name === passwordField)
+        .map(field => `!${field.name}`)
+        .join(' || ');
+    
+    // Generar el objeto para crear el usuario con todos los campos
+    const createUserObject = allFields
+        .map(field => `            ${field.name}: ${field.name}`)
+        .join(',\n');
+    
+    const content = `
+import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { ${userClassName} } from '../models/${userClassName}';
+
+const SECRET_KEY = process.env.JWT_SECRET || "secreto.01";
+
+// Función de login
+const loginCtrl = async (req: Request, res: Response) => {
+    try {
+        const { ${usernameField}, ${passwordField} } = req.body;
+        
+        if (!${usernameField} || !${passwordField}) {
+            res.status(400).json({ message: "${usernameField} y ${passwordField} son requeridos" });
+            return;
+        }
+
+        // Buscar usuario por ${usernameField}
+        const user = await ${userClassName}.findOne({ 
+            where: { ${usernameField}: ${usernameField} } 
+        });
+
+        if (!user) {
+            res.status(401).json({ message: "Credenciales inválidas" });
+            return;
+        }
+
+        // Verificar password (en producción deberías usar hash)
+        if ((user as any).${passwordField} !== ${passwordField}) {
+            res.status(401).json({ message: "Credenciales inválidas" });
+            return;
+        }
+
+        // Generar JWT token
+        const token = jwt.sign(
+            { 
+                id: (user as any).ID,
+                ${usernameField}: (user as any).${usernameField}
+            },
+            SECRET_KEY,
+            { expiresIn: '24h' }
+        );
+
+        res.header('authorization', token)
+           .json({ 
+                message: "Login exitoso",
+                user: {
+                    id: (user as any).ID,
+                    ${usernameField}: (user as any).${usernameField}
+                },
+                token: token
+            });
+    } catch (error) {
+        console.error("Error en login:", error);
+        res.status(500).json({ message: "Error en el proceso de login" });
+    }
+};
+
+// Función de registro
+const registerCtrl = async (req: Request, res: Response) => {
+    try {
+        const { ${allFieldNames} } = req.body;
+        
+        // Validar campos obligatorios
+        if (${fieldValidations}) {
+            res.status(400).json({ message: "${usernameField} y ${passwordField} son requeridos" });
+            return;
+        }
+
+        // Verificar si el usuario ya existe
+        const existingUser = await ${userClassName}.findOne({ 
+            where: { ${usernameField}: ${usernameField} } 
+        });
+
+        if (existingUser) {
+            res.status(409).json({ message: "El usuario ya existe" });
+            return;
+        }
+
+        // Crear nuevo usuario con todos los campos (en producción deberías hashear la contraseña)
+        const newUser = await ${userClassName}.create({
+${createUserObject}
+        });
+
+        res.status(201).json({ 
+            message: "Usuario registrado exitosamente",
+            user: {
+                id: (newUser as any).ID,
+                ${usernameField}: (newUser as any).${usernameField}
+            }
+        });
+    } catch (error) {
+        console.error("Error en registro:", error);
+        res.status(500).json({ message: "Error en el proceso de registro" });
+    }
+};
+
+// Función para verificar token
+const verifyToken = (req: Request, res: Response) => {
+    try {
+        const token = req.headers['authorization'];
+        
+        if (!token) {
+            res.status(401).json({ message: "Token no proporcionado" });
+            return;
+        }
+
+        const decoded = jwt.verify(token, SECRET_KEY);
+        res.json({ 
+            message: "Token válido",
+            user: decoded
+        });
+    } catch (error) {
+        res.status(403).json({ message: "Token inválido" });
+    }
+};
+
+export { loginCtrl, registerCtrl, verifyToken };
+    `;
+    fs.writeFileSync(filePath, content);
+    console.log(`✅ Archivo de autenticación generado: ${filePath}`);
+}
 
 const generarArchivoModelo = (node: any,modelsPath: string): void => {
     const className = node.name;

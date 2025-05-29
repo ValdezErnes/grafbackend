@@ -42,33 +42,70 @@ export const generarproyecto = async (req: Request, res: Response) => {
             return;
         }
         proyecto.Nombre = proyecto.Nombre.replace(/ /g, "_");
-        // console.log("Clases.json ",clases.json);
-        //quiero que en el clases.json, en el nodeDataArray, en el properties, en el name, se reemplacen los espacios por guiones y se retorne para agregarlo a graphModel, además que graphModel ya no contenga el ID de ninguna clase, este viene como properties en el prop.name
+
         const jsonData = JSON.parse(clases.json);
-        const graphModel = {
-            ...jsonData,  // Mantiene todas las propiedades originales
-            nodeDataArray: jsonData.nodeDataArray.map((node: any) => {
-                // Creamos un nuevo objeto para cada nodo
-                const nodeWithoutIdProp = {
-                    ...node,
-                    properties: node.properties
-                        .filter((prop: any) => prop.name.toLowerCase() !== 'id')
-                        .map((prop: any) => ({
-                            ...prop,
-                            name: prop.name.replace(/\s+/g, '_')
-                        }))
-                };
-                return nodeWithoutIdProp;
-            })
-        };
         
-        //Quiero que se escriba todas las propiedades de cada clase de graphModel en terminal
-        graphModel.nodeDataArray.forEach((node: any) => {
-            console.log("Clase: ", node.name);
-            node.properties.forEach((prop: any) => {
-                console.log("Propiedad: ", prop.name);
-            });
+        // Procesar nodeDataArray para manejar propiedades
+        let processedNodeArray = jsonData.nodeDataArray.map((node: any) => {
+            const nodeWithoutIdProp = {
+                ...node,
+                properties: node.properties
+                    .filter((prop: any) => prop.name.toLowerCase() !== 'id')
+                    .map((prop: any) => ({
+                        ...prop,
+                        name: prop.name.replace(/\s+/g, '_')
+                    }))
+            };
+            return nodeWithoutIdProp;
         });
+
+        // Verificar si existe una clase users o similar para login
+        const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
+        let userClassIndex = processedNodeArray.findIndex((node: any) => 
+            userClassNames.some(className => 
+                node.name && node.name.toLowerCase().includes(className.toLowerCase())
+            )
+        );
+
+        const loginFields = [
+            { name: 'username', type: 'string', visibility: 'private' },
+            { name: 'password', type: 'string', visibility: 'private' }
+        ];
+
+        if (userClassIndex !== -1) {
+            // Si existe una clase user, agregar campos de login si no existen
+            const userClass = processedNodeArray[userClassIndex];
+            
+            loginFields.forEach(loginField => {
+                const fieldExists = userClass.properties.some((prop: any) => 
+                    prop.name.toLowerCase().includes(loginField.name.toLowerCase()) ||
+                    loginField.name.toLowerCase().includes(prop.name.toLowerCase())
+                );
+                
+                if (!fieldExists) {
+                    userClass.properties.push(loginField);
+                }
+            });
+        } else {
+            // Si no existe, crear nueva clase users
+            const newUserClass = {
+                key: Math.max(...processedNodeArray.map((node: any) => node.key || 0)) + 1,
+                name: 'Users',
+                properties: loginFields,
+                methods: [
+                    { name: 'login', type: 'boolean', visibility: 'public' },
+                    { name: 'logout', type: 'void', visibility: 'public' }
+                ],
+                loc: '0 0'
+            };
+            
+            processedNodeArray.push(newUserClass);
+        }
+
+        const graphModel = {
+            ...jsonData,  
+            nodeDataArray: processedNodeArray
+        };
         
         const graphModelString = JSON.stringify(graphModel);
 

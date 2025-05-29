@@ -3,6 +3,7 @@ import { Proyecto } from "../models/proyectos.model";
 import { Versiones } from "../models/versiones.model";
 import { createProjectBackend } from "../services/crearbackend";
 import { createProjectFrontend } from "../services/crearfrontend";
+import {generarcarpetas} from "../services/paquetesServices";
 
 
 
@@ -70,9 +71,13 @@ export const generarproyecto = async (req: Request, res: Response) => {
         });
         
         const graphModelString = JSON.stringify(graphModel);
+
+        const jsonpaquetes = JSON.parse(paquetes.json);
         // Creacion del boilerplate
         await createProjectBackend(proyecto.Nombre, graphModelString, conexion);
         await createProjectFrontend(proyecto.Nombre, graphModelString);
+        await generarcarpetas(proyecto.Nombre, jsonpaquetes);
+
         res.status(200).json({ message: "Proyecto generado correctamente" });
     } catch (error) {
         res.status(500).json({ error: "Error al generar el proyecto" });

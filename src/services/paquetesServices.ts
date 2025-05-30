@@ -13,12 +13,10 @@ interface GraphModel {
     nodeDataArray: NodeData[];
 }
 
-export const generarcarpetas = async (nombreProyecto: string, graphModel1: string): Promise<void> => {
-    const desktopPath = path.join(os.homedir(), 'Escriotorio');
-    const srcbackend = path.join(desktopPath,nombreProyecto, `${nombreProyecto}-backend`, 'src');
-    const srcfrontend = path.join(desktopPath,nombreProyecto, `${nombreProyecto}-frontend`, 'src', 'app');
+export const generarcarpetas = async (proyectFolderPath:string,nombreProyecto: string, graphModel1: string): Promise<void> => {
     
-
+    const srcbackend = path.join(proyectFolderPath, `${nombreProyecto}-backend`, 'src');
+    const srcfrontend = path.join(proyectFolderPath, `${nombreProyecto}-frontend`, 'src', 'app');
 
     // Parsea el modelo gráfico
     const graphModel: GraphModel = typeof graphModel1 === "string" ? JSON.parse(graphModel1) : graphModel1;

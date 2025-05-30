@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { exec } from "child_process";
+import { isUsernameField, isPasswordField, isUserClass, findUsernameField, findPasswordField } from "../utils/FieldsDetection";
 
 
 export const executeCommand = (command: string, cwd: string) => {
@@ -25,11 +26,10 @@ const crearCarpetaSiNoExiste = (ruta: string) => {
     }
 };
 
-export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string, puertoBackend:string): Promise<void> => {
-    const desktopPath = path.join(os.homedir(), "Escriotorio");
-    const projectFolderPath = path.join(desktopPath, nombreProyecto);
+export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string, puertoBackend:string, projectFolderPath: string): Promise<void> => {
     const frontendPath = path.join(projectFolderPath, `${nombreProyecto}-frontend`);
     const srcPath = path.join(frontendPath, "src", "app");
+    const srcsinapp = path.join(frontendPath, "src");
     const componentsPath = path.join(srcPath, "components");
     const servicesPath = path.join(srcPath, "services");
 
@@ -38,15 +38,21 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     for (const node of graphModel.nodeDataArray) {
         clases.push(node);
     }
-
-    if (!fs.existsSync(frontendPath)) {
-      console.log("🚀 Creando proyecto Angular...");
-    await executeCommand(`npx @angular/cli new ${nombreProyecto}-frontend --routing --style css`, projectFolderPath);
-    }else{
-        console.log("🟡 El proyecto ya existe, continuando...");
-    }
-
     
+    if (fs.existsSync(frontendPath)) {
+      console.log("🗑️  Proyecto frontend ya existe, eliminando contenido anterior...");
+      try {
+          // Eliminar todo el directorio del frontend de forma recursiva
+          fs.rmSync(frontendPath, { recursive: true, force: true });
+          console.log("✅ Contenido anterior eliminado exitosamente");
+      } catch (error) {
+          console.error("❌ Error al eliminar/recrear el directorio:", error);
+          throw error;
+      }
+    }
+      
+    console.log("🚀 Creando proyecto Angular...");
+    await executeCommand(`npx @angular/cli new ${nombreProyecto}-frontend --routing --style css`, projectFolderPath);
     crearCarpetaSiNoExiste(componentsPath);
     crearCarpetaSiNoExiste(servicesPath);
 
@@ -59,7 +65,9 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     console.log("📝 Generando menú principal...");
     generarMenuPrincipal(clases, srcPath);
 
-    generarAppComponent(clases,srcPath)
+    generarAppComponent(clases,srcPath);
+
+    modificarStyle(srcsinapp);
 
     console.log("📝 Generando rutas...");
     generarRutas(clases, srcPath);
@@ -70,21 +78,33 @@ export const createProjectFrontend = async (nombreProyecto: string, graphModel1:
     console.log("📝 Generando archivo de entorno...");
     generarEnvironment(srcPath,puertoBackend);
 
-    // Buscar la clase de usuarios para generar login/register dinámico
-    const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
+    // Buscar la clase de usuarios para generar login/register dinámico usando función importada
     const userClass = clases.find((clase: any) => 
-        userClassNames.some(className => 
-            clase.name && clase.name.toLowerCase().includes(className.toLowerCase())
-        )
+        isUserClass(clase.name)
     );
 
     generarLogin(componentsPath, userClass);
     generarRegister(componentsPath, userClass);
     generarAuthService(servicesPath, userClass);
 
+    console.log("📝 Generando guard de autenticación...");
+    generarAuthGuard(srcPath);
+
     console.log("✅ Proyecto frontend generado correctamente.");
 
 };
+
+const modificarStyle = (srcsinapp: string) => {
+    const stylePath = path.join(srcsinapp, "styles.css");
+    const css = `
+body{
+  margin: 0!important;
+  padding: 0!important;
+}
+    `;
+    //Que se borre todo el contenido de stylePath
+    fs.writeFileSync(stylePath, css);
+}
 
 const generarComponente = (clase: any, componentsPath: string) => {
   const className = clase.name.toLowerCase();
@@ -114,6 +134,8 @@ export class ${clase.name}Component implements OnInit {
   formData: any = {};
   showModal: boolean = false;
   isEditing: boolean = false;
+  showIdInput: boolean = false;
+  searchId: string = '';
 
   constructor(private ${className}Service: ${clase.name}Service) {}
 
@@ -122,21 +144,30 @@ export class ${clase.name}Component implements OnInit {
   }
 
   executeMethod(): void {
+    this.items = [];
     switch (this.selectedMethod) {
       case 'getAll':
+        this.showIdInput = false;
         this.${className}Service.getAll().subscribe(data => this.items = data);
         break;
       case 'getById':
-        const id = prompt('Ingrese el ID:');
-        if (id) {
-          this.${className}Service.getById(Number(id)).subscribe(data => this.items = [data]);
-        }
+        this.showIdInput = true;
         break;
       case 'create':
+        this.showIdInput = false;
         this.formData = {};
         this.isEditing = false;
         this.showModal = true;
         break;
+    }
+  }
+
+  searchById(): void {
+    if (this.searchId && !isNaN(Number(this.searchId))) {
+      this.${className}Service.getById(Number(this.searchId)).subscribe(data => {
+        this.items = [data];
+        this.showIdInput = false;
+      });
     }
   }
 
@@ -187,6 +218,12 @@ export class ${clase.name}Component implements OnInit {
       <option value="create">Crear nuevo</option>
     </select>
     <button class="execute-btn" (click)="executeMethod()">Ejecutar</button>
+  </div>
+
+  <!-- Buscador por ID -->
+  <div *ngIf="showIdInput" class="id-search">
+    <input type="text" [(ngModel)]="searchId" placeholder="Ingrese ID del ${className}" />
+    <button class="search-btn" (click)="searchById()">Buscar</button>
   </div>
 
   <!-- Tabla de Datos -->
@@ -434,7 +471,7 @@ h1::after {
 }
 
 .modal-content input {
-  width: 100%;
+  width: 93%;
   padding: 0.8rem;
   border: 2px solid #e0e6ed;
   border-radius: 8px;
@@ -482,6 +519,60 @@ h1::after {
   transform: translateY(-2px);
 }
 
+.id-search {
+  background: #f5f7fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+  animation: fadeIn 0.3s ease;
+}
+
+.id-search input {
+  flex: 1;
+  padding: 0.8rem 1rem;
+  border: 2px solid #e0e6ed;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #2c3e50;
+  background: #ffffff;
+  transition: all 0.3s ease;
+  outline: none;
+  max-width: 200px;
+}
+
+.id-search input:focus {
+  border-color: #3949ab;
+  box-shadow: 0 0 0 3px rgba(26,35,126,0.1);
+}
+
+.search-btn {
+  background: linear-gradient(135deg, #1a237e, #3949ab);
+  color: white;
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(26,35,126,0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.search-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(26,35,126,0.3);
+}
+
+.search-btn:active {
+  transform: translateY(0);
+}
+
 @media (max-width: 768px) {
   .container {
     padding: 1rem;
@@ -521,8 +612,6 @@ h1::after {
 
   console.log(`✅ Componente generado: ${componentPath}`);
 };
-
-
 
 const generarServicio = (clase: any, servicesPath: string) => {
     const className = clase.name.toLowerCase();
@@ -581,11 +670,17 @@ export class ${clase.name}Service {
 };
 
 const generarMenuPrincipal = (clases: any[], srcPath: string) => {
-  const menuHtmlPath = path.join(srcPath, "menu.component.html");
+  const menuHtmlPath = path.join(srcPath,"components/menu", "menu.component.html");
+  crearCarpetaSiNoExiste(path.join(srcPath,"components/menu"));
   const menuHtml = `
-
-  <header>
-  <button class="menu-toggle" (click)="toggleMenu()">☰ Clases</button>
+<header>
+  <div class="header-content">
+    <button class="menu-toggle" (click)="toggleMenu()">☰ Clases</button>
+    <div class="user-actions">
+      <span class="welcome">Bienvenido</span>
+      <button class="logout-btn" (click)="logout()">Cerrar Sesión</button>
+    </div>
+  </div>
   <nav [class.open]="menuOpen">
     <div class="menu-grid">
       ${clases
@@ -598,12 +693,11 @@ const generarMenuPrincipal = (clases: any[], srcPath: string) => {
         .join("\n")}
     </div>
   </nav>
-  </header>
-@if(!isMenuRoute()){
-  <main>
-    <router-outlet></router-outlet>
-  </main>
-}
+</header>
+
+<main>
+  <router-outlet></router-outlet>
+</main>
 `;
 
   const menuComponentTs = `
@@ -629,21 +723,68 @@ export class MenuComponent {
   autoCloseMenu() {
     this.menuOpen = false;
   }
-  isMenuRoute(): boolean {
-    return this.router.url === '/home';
-  }   
+
+  logout() {
+    sessionStorage.removeItem('token');
+    this.router.navigate(['/login']);
+  }
 }
 `;
 
   const menuCss = `
+:host {
+  display: block;
+  width: 100%;
+  height: 100vh;
+}
+
 header {
   background: linear-gradient(135deg, #1a237e, #3949ab);
   color: white;
   padding: 1rem;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  position: sticky;
+  position: fixed;
   top: 0;
-  z-index: 100;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  min-height: 100px;
+  transition: all 0.3s ease;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  height: 60px;
+}
+
+.user-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.welcome {
+  font-weight: 500;
+  color: rgba(255,255,255,0.9);
+}
+
+.logout-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.logout-btn:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateY(-1px);
 }
 
 .menu-toggle {
@@ -667,12 +808,14 @@ header {
 
 nav {
   display: none;
-  margin-top: 1rem;
   background: rgba(255,255,255,0.05);
   border-radius: 12px;
   padding: 1rem;
   backdrop-filter: blur(10px);
   animation: slideDown 0.3s ease;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
 }
 
 @keyframes slideDown {
@@ -682,6 +825,7 @@ nav {
 
 nav.open {
   display: block;
+  max-height: 300px;
 }
 
 .menu-grid {
@@ -707,7 +851,8 @@ nav.open {
   border: 1px solid rgba(255,255,255,0.1);
 }
 
-.menu-grid a:hover {
+.menu-grid a:hover,
+.menu-grid a.active {
   background: rgba(255,255,255,0.2);
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
@@ -717,10 +862,29 @@ nav.open {
 main {
   padding: 2rem;
   background: #f5f7fa;
-  min-height: calc(100vh - 80px);
+  min-height: 100vh;
+  padding-top: calc(2rem + 120px);
+  transition: padding-top 0.3s ease;
+  box-sizing: border-box;
+}
+
+/* Estilos globales usando las clases del body */
+:host-context(body.menu-open) main {
+  padding-top: calc(2rem + 180px);
 }
 
 @media (max-width: 768px) {
+  header {
+    min-height: 120px;
+  }
+
+  .header-content {
+    flex-direction: column;
+    gap: 1rem;
+    height: auto;
+    margin-bottom: 0.5rem;
+  }
+
   .menu-grid {
     grid-template-columns: 1fr;
   }
@@ -732,171 +896,121 @@ main {
 
   main {
     padding: 1rem;
+    padding-top: calc(1rem + 140px);
+  }
+
+  nav.open {
+    max-height: 400px;
+  }
+
+  :host-context(body.menu-open) main {
+    padding-top: calc(1rem + 220px);
+  }
+
+  .user-actions {
+    order: -1;
+  }
+}
+
+@media (max-width: 480px) {
+  header {
+    min-height: 140px;
+    padding: 0.8rem;
+  }
+
+  .header-content {
+    gap: 0.8rem;
+  }
+
+  .menu-toggle {
+    font-size: 1rem;
+    padding: 0.6rem 1rem;
+  }
+
+  .logout-btn {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+  }
+
+  main {
+    padding-top: calc(1rem + 160px);
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  nav.open {
+    max-height: 350px;
+  }
+
+  :host-context(body.menu-open) main {
+    padding-top: calc(1rem + 240px);
   }
 }
 `;
 
   fs.writeFileSync(menuHtmlPath, menuHtml.trim());
-  fs.writeFileSync(path.join(srcPath, "menu.component.ts"), menuComponentTs.trim());
-  fs.writeFileSync(path.join(srcPath, "menu.component.css"), menuCss.trim());
-  console.log(`✅ Menú principal generado en columnas: ${menuHtmlPath}`);
+  fs.writeFileSync(path.join(srcPath,"components/menu", "menu.component.ts"), menuComponentTs.trim());
+  fs.writeFileSync(path.join(srcPath,"components/menu", "menu.component.css"), menuCss.trim());
+  console.log(`✅ Menú principal generado: ${menuHtmlPath}`);
 };
+
 const generarAppComponent = (clases: any[], srcPath: string) => {
   const menuHtmlPath = path.join(srcPath, "app.component.html");
   const menuHtml = `
-  @if(isAuthRouteRegister()) {
-    <app-register></app-register>
-  }@else if(isAuthRoute()){
-    <app-login></app-login>
-  }@else{
-    <app-menu></app-menu>
-  } 
+<router-outlet></router-outlet>
 `;
 
   const menuComponentTs = `
 import { Component } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
-import {MenuComponent} from './menu.component'
-import { LoginComponent } from './components/login/login.component';
-import { RegisterComponent } from './components/register/register.component';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [MenuComponent,LoginComponent,RegisterComponent],
+  imports: [RouterOutlet],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
 export class AppComponent {
-  menuOpen = true;
-
-  constructor(private router: Router) {}
-
-  toggleMenu() {
-    this.menuOpen = !this.menuOpen;
-  }
-
-  autoCloseMenu() {
-    this.menuOpen = false;
-  }
-
-  isAuthRoute(): boolean {
-    return this.router.url === '/login';
-  }
-  isAuthRouteRegister(): boolean {
-    return  this.router.url === '/register';
-  }
-
+  title = 'app';
 }
 `;
 
   const menuCss = `
-header {
-  background: linear-gradient(135deg, #1a237e, #3949ab);
-  color: white;
-  padding: 1rem;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  height: 100%;
+  overflow-x: hidden;
 }
 
-.menu-toggle {
-  background: rgba(255,255,255,0.1);
-  border: none;
-  color: white;
-  font-size: 1.2rem;
-  padding: 0.8rem 1.2rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+* {
+  box-sizing: border-box;
 }
 
-.menu-toggle:hover {
-  background: rgba(255,255,255,0.2);
-  transform: translateY(-1px);
-}
-
-nav {
-  display: none;
-  margin-top: 1rem;
-  background: rgba(255,255,255,0.05);
-  border-radius: 12px;
-  padding: 1rem;
-  backdrop-filter: blur(10px);
-  animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-  from { transform: translateY(-10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-nav.open {
+app-menu {
   display: block;
+  width: 100% !important;
+  height: 100vh !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
-.menu-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 1rem;
-  padding: 0.5rem;
+body.has-fixed-menu {
+  padding-top: 0;
 }
 
-.menu-grid a {
-  color: white;
-  background: rgba(255,255,255,0.1);
-  padding: 1rem;
-  text-align: center;
-  text-decoration: none;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255,255,255,0.1);
-}
-
-.menu-grid a:hover {
-  background: rgba(255,255,255,0.2);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-  border-color: rgba(255,255,255,0.2);
-}
-
-main {
-  padding: 2rem;
-  background: #f5f7fa;
-  min-height: calc(100vh - 80px);
-}
-
-@media (max-width: 768px) {
-  .menu-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .menu-toggle {
-    width: 100%;
-    justify-content: center;
-  }
-
-  main {
-    padding: 1rem;
-  }
+body.menu-open {
+  overflow-x: hidden;
 }
 `;
 
   fs.writeFileSync(menuHtmlPath, menuHtml.trim());
   fs.writeFileSync(path.join(srcPath, "app.component.ts"), menuComponentTs.trim());
   fs.writeFileSync(path.join(srcPath, "app.component.css"), menuCss.trim());
-  console.log(`✅ Menú principal generado en columnas: ${menuHtmlPath}`);
+  console.log(`✅ App Component generado: ${menuHtmlPath}`);
 };
-
 
 const generarRutas = (clases: any[], srcPath: string) => {
     const routesFilePath = path.join(srcPath, "app.routes.ts");
@@ -908,7 +1022,8 @@ const generarRutas = (clases: any[], srcPath: string) => {
         ),
         `import { LoginComponent } from './components/login/login.component';`,
         `import { RegisterComponent } from './components/register/register.component';`,
-        `import {MenuComponent} from './menu.component';`
+        `import { MenuComponent } from './components/menu/menu.component';`,
+        `import { AuthGuard } from './guards/auth.guard';`
     ];
 
     const routesContent = `
@@ -917,22 +1032,30 @@ import { Routes } from '@angular/router';
 ${imports.join("\n")}
 
 export const routes: Routes = [
-  ${clases
-    .map(
-      (clase) =>
-        `{ path: '${clase.name.toLowerCase()}', component: ${clase.name}Component }`
-    )
-    .join(",\n  ")},
+  {
+    path: '',
+    component: MenuComponent,
+    canActivate: [AuthGuard],
+    children: [
+      ${clases
+        .map(
+          (clase) =>
+            `{ path: '${clase.name.toLowerCase()}', component: ${clase.name}Component }`
+        )
+        .join(",\n      ")},
+      { path: '', redirectTo: '${clases.length > 0 ? clases[0].name.toLowerCase() : 'dashboard'}', pathMatch: 'full' }
+    ]
+  },
   { path: 'login', component: LoginComponent },
   { path: 'register', component: RegisterComponent },
-  { path: 'home', component: MenuComponent },
-  { path: '', redirectTo: 'login', pathMatch: 'full' }
+  { path: '**', redirectTo: '/login' }
 ];
     `;
 
     fs.writeFileSync(routesFilePath, routesContent.trim());
     console.log(`✅ Rutas generadas: ${routesFilePath}`);
 };
+
 const generarAppConfig = (srcPath: string) => {
   const configPath = path.join(srcPath, "app.config.ts");
 
@@ -976,21 +1099,13 @@ const generarLogin = (componentsPath: string, userClass?: any) => {
     const componentPath = path.join(componentsPath, "login");
     crearCarpetaSiNoExiste(componentPath);
 
-    // Buscar los nombres de los campos de username y password
+    // Buscar los nombres de los campos de username y password usando funciones importadas
     let usernameField = 'username';
     let passwordField = 'password';
     
     if (userClass && userClass.properties) {
-        const usernameProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('username') || 
-            prop.name.toLowerCase().includes('usuario') ||
-            prop.name.toLowerCase().includes('user')
-        );
-        const passwordProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('password') || 
-            prop.name.toLowerCase().includes('contraseña') ||
-            prop.name.toLowerCase().includes('clave')
-        );
+        const usernameProperty = findUsernameField(userClass.properties);
+        const passwordProperty = findPasswordField(userClass.properties);
         
         if (usernameProperty) usernameField = usernameProperty.name;
         if (passwordProperty) passwordField = passwordProperty.name;
@@ -1001,13 +1116,13 @@ const generarLogin = (componentsPath: string, userClass?: any) => {
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   templateUrl: './login.component.html',
   styleUrl: './login.component.css'
 })
@@ -1025,8 +1140,7 @@ export class LoginComponent {
         const token = res.token || res.headers?.get('authorization');
         if (token) {
           sessionStorage.setItem('token', token);
-          console.log("Token guardado en sessionStorage:", token);
-          this.router.navigate(['/home']);
+          this.router.navigate(['/']);
         }
         this.error = '';
       },
@@ -1056,9 +1170,6 @@ export class LoginComponent {
     </label>
     <button type="submit">Entrar</button>
     <div *ngIf="error" class="error">{{error}}</div>
-    <p class="register-link">
-      ¿No tienes cuenta? <a routerLink="/register">Regístrate aquí</a>
-    </p>
   </form>
   <div class="register-link">
     ¿No tienes cuenta?
@@ -1092,7 +1203,7 @@ label {
 }
 
 input {
-  width: 100%;
+  width: 93%;
   padding: 0.8rem;
   margin-top: 0.3rem;
   border: 2px solid #e0e6ed;
@@ -1164,7 +1275,7 @@ const generarRegister = (componentsPath: string, userClass?: any) => {
     const componentPath = path.join(componentsPath, "register");
     crearCarpetaSiNoExiste(componentPath);
 
-    // Buscar los nombres de los campos
+    // Buscar los nombres de los campos usando funciones importadas
     let usernameField = 'username';
     let passwordField = 'password';
     let allFields: any[] = [];
@@ -1172,16 +1283,8 @@ const generarRegister = (componentsPath: string, userClass?: any) => {
     if (userClass && userClass.properties) {
         allFields = userClass.properties;
         
-        const usernameProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('username') || 
-            prop.name.toLowerCase().includes('usuario') ||
-            prop.name.toLowerCase().includes('user')
-        );
-        const passwordProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('password') || 
-            prop.name.toLowerCase().includes('contraseña') ||
-            prop.name.toLowerCase().includes('clave')
-        );
+        const usernameProperty = findUsernameField(userClass.properties);
+        const passwordProperty = findPasswordField(userClass.properties);
         
         if (usernameProperty) usernameField = usernameProperty.name;
         if (passwordProperty) passwordField = passwordProperty.name;
@@ -1285,7 +1388,7 @@ label {
 }
 
 input {
-  width: 100%;
+  width: 93%;
   padding: 0.8rem;
   margin-top: 0.3rem;
   border: 2px solid #e0e6ed;
@@ -1360,21 +1463,13 @@ button:hover {
 const generarAuthService = (servicesPath: string, userClass?: any) => {
     const serviceFilePath = path.join(servicesPath, "auth.service.ts");
     
-    // Buscar los nombres de los campos de username y password
+    // Buscar los nombres de los campos de username y password usando funciones importadas
     let usernameField = 'username';
     let passwordField = 'password';
     
     if (userClass && userClass.properties) {
-        const usernameProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('username') || 
-            prop.name.toLowerCase().includes('usuario') ||
-            prop.name.toLowerCase().includes('user')
-        );
-        const passwordProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('password') || 
-            prop.name.toLowerCase().includes('contraseña') ||
-            prop.name.toLowerCase().includes('clave')
-        );
+        const usernameProperty = findUsernameField(userClass.properties);
+        const passwordProperty = findPasswordField(userClass.properties);
         
         if (usernameProperty) usernameField = usernameProperty.name;
         if (passwordProperty) passwordField = passwordProperty.name;
@@ -1398,8 +1493,10 @@ export class AuthService {
   constructor(private http: HttpClient) {}
 
   private getHeaders(): HttpHeaders {
+    const token = sessionStorage.getItem('token');
     return new HttpHeaders({
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': token || ''
     });
   }
 
@@ -1436,4 +1533,35 @@ export class AuthService {
     `;
     fs.writeFileSync(serviceFilePath, serviceContent.trim());
     console.log(`✅ Servicio de autenticación generado: ${serviceFilePath}`);
+};
+
+const generarAuthGuard = (srcPath: string) => {
+    const guardsPath = path.join(srcPath, "guards");
+    crearCarpetaSiNoExiste(guardsPath);
+    
+    const guardFilePath = path.join(guardsPath, "auth.guard.ts");
+    const guardContent = `
+import { Injectable } from '@angular/core';
+import { Router } from '@angular/router';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthGuard {
+  constructor(private router: Router) {}
+
+  canActivate(): boolean {
+    const token = sessionStorage.getItem('token');
+    if (token) {
+      return true;
+    } else {
+      this.router.navigate(['/login']);
+      return false;
+    }
+  }
+}
+    `;
+    
+    fs.writeFileSync(guardFilePath, guardContent.trim());
+    console.log(`✅ Auth Guard generado: ${guardFilePath}`);
 };

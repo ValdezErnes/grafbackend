@@ -4,8 +4,9 @@ import { Versiones } from "../models/versiones.model";
 import { createProjectBackend } from "../services/crearbackend";
 import { createProjectFrontend } from "../services/crearfrontend";
 import {generarcarpetas} from "../services/paquetesServices";
-
-
+import { isUsernameField, isPasswordField, isUserClass, findUsernameField, findPasswordField } from "../utils/FieldsDetection";
+import path from "path";
+import os from "os";
 
 export const generarproyecto = async (req: Request, res: Response) => {
     const {id,idv_cu,idv_sec,idv_paq,idv_comp,idv_class,conexion} = req.body;
@@ -16,36 +17,22 @@ export const generarproyecto = async (req: Request, res: Response) => {
             res.status(404).json({ error: "Proyecto no encontrado" });
             return;
         }
-        const clases = await Versiones.findByPk(idv_class);
-        if (!clases) {
-            res.status(404).json({ error: "Version del Diagrama de clases no encontrada" });
-            return;
-        }
-        const secuencias = await Versiones.findByPk(idv_sec);
-        if (!secuencias) {
-            res.status(404).json({ error: "Version del Diagrama de secuencias no encontrada" });
-            return;
-        }
-        const paquetes = await Versiones.findByPk(idv_paq);
-        if (!paquetes) {
-            res.status(404).json({ error: "Version del Diagrama de paquetes no encontrada" });
-            return;
-        }
-        const componentes = await Versiones.findByPk(idv_comp);
-        if (!componentes) {
-            res.status(404).json({ error: "Version del Diagrama de componentes no encontrada" });
-            return;
-        }
-        const casosUso = await Versiones.findByPk(idv_cu);
-        if (!casosUso) {
-            res.status(404).json({ error: "Version del Diagrama de casos de uso no encontrada" });
-            return;
-        }
+        
+        const clases = await ObtenerVersion(idv_class, "Diagrama de clases", res);
+        if (!clases) return;
+        const secuencias = await ObtenerVersion(idv_sec, "Diagrama de secuencias", res);
+        if (!secuencias) return;
+        const paquetes = await ObtenerVersion(idv_paq, "Diagrama de paquetes", res);
+        if (!paquetes) return;
+        const componentes = await ObtenerVersion(idv_comp, "Diagrama de componentes", res);
+        if (!componentes) return;
+        const casosUso = await ObtenerVersion(idv_cu, "Diagrama de casos de uso", res);
+        if (!casosUso) return;
+        
         proyecto.Nombre = proyecto.Nombre.replace(/ /g, "_");
 
         const jsonData = JSON.parse(clases.json);
         
-        // Procesar nodeDataArray para manejar propiedades
         let processedNodeArray = jsonData.nodeDataArray.map((node: any) => {
             const nodeWithoutIdProp = {
                 ...node,
@@ -59,12 +46,8 @@ export const generarproyecto = async (req: Request, res: Response) => {
             return nodeWithoutIdProp;
         });
 
-        // Verificar si existe una clase users o similar para login
-        const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
         let userClassIndex = processedNodeArray.findIndex((node: any) => 
-            userClassNames.some(className => 
-                node.name && node.name.toLowerCase().includes(className.toLowerCase())
-            )
+            isUserClass(node.name)
         );
 
         const loginFields = [
@@ -73,21 +56,16 @@ export const generarproyecto = async (req: Request, res: Response) => {
         ];
 
         if (userClassIndex !== -1) {
-            // Si existe una clase user, agregar campos de login si no existen
             const userClass = processedNodeArray[userClassIndex];
-            
-            loginFields.forEach(loginField => {
-                const fieldExists = userClass.properties.some((prop: any) => 
-                    prop.name.toLowerCase().includes(loginField.name.toLowerCase()) ||
-                    loginField.name.toLowerCase().includes(prop.name.toLowerCase())
-                );
-                
-                if (!fieldExists) {
-                    userClass.properties.push(loginField);
-                }
-            });
+            const existingUsernameField = findUsernameField(userClass.properties);
+            const existingPasswordField = findPasswordField(userClass.properties);
+            if (!existingUsernameField) {
+                userClass.properties.push(loginFields[0]);
+            }
+            if (!existingPasswordField) {
+                userClass.properties.push(loginFields[1]);
+            }
         } else {
-            // Si no existe, crear nueva clase users
             const newUserClass = {
                 key: Math.max(...processedNodeArray.map((node: any) => node.key || 0)) + 1,
                 name: 'Users',
@@ -110,14 +88,25 @@ export const generarproyecto = async (req: Request, res: Response) => {
         const graphModelString = JSON.stringify(graphModel);
 
         const jsonpaquetes = JSON.parse(paquetes.json);
+        const desktopPath = path.join(os.homedir(), 'Proyectos');
+        const projectFolderPath = path.join(desktopPath, proyecto.Nombre);
         // Creacion del boilerplate
-        await createProjectBackend(proyecto.Nombre, graphModelString, conexion);
-        await createProjectFrontend(proyecto.Nombre, graphModelString,conexion.puertoBackend);
-        await generarcarpetas(proyecto.Nombre, jsonpaquetes);
+        await createProjectBackend(proyecto.Nombre, graphModelString, conexion,projectFolderPath);
+        await createProjectFrontend(proyecto.Nombre, graphModelString,conexion.puertoBackend,projectFolderPath);
+        await generarcarpetas(projectFolderPath,proyecto.Nombre, jsonpaquetes);
 
         res.status(200).json({ message: "Proyecto generado correctamente" });
     } catch (error) {
         res.status(500).json({ error: "Error al generar el proyecto" });
         console.error("Error al generar el proyecto:", error);
     }
+}
+
+const ObtenerVersion = async (id: number, nombre: string, res: Response) => {
+    const version = await Versiones.findByPk(id);
+    if (!version) {
+        res.status(404).json({ error: `Versión del Diagrama de ${nombre} no encontrada` });
+        return null;
+    }
+    return version;
 }

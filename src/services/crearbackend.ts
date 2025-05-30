@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { exec } from "child_process";
+import { isUsernameField, isPasswordField, isUserClass, findUsernameField, findPasswordField } from "../utils/FieldsDetection";
 
 type Credenciales = {
     host: string;
@@ -65,9 +66,7 @@ const instalarDependenciasBackend = async (backendPath: string, dialecto: string
     console.log('✅ Dependencias instaladas correctamente.');
 };
 
-export const createProjectBackend = async (nombreProyecto: string,graphModel: any,credenciales: Credenciales): Promise<void> => {
-    const desktopPath = path.join(os.homedir(), 'Escriotorio');
-    const projectFolderPath = path.join(desktopPath, nombreProyecto);
+export const createProjectBackend = async (nombreProyecto: string,graphModel: any,credenciales: Credenciales,projectFolderPath: string): Promise<void> => {
     const backendPath = path.join(projectFolderPath, `${nombreProyecto}-backend`);
     const srcbackend = path.join(projectFolderPath, `${nombreProyecto}-backend`, 'src');
 
@@ -80,9 +79,15 @@ export const createProjectBackend = async (nombreProyecto: string,graphModel: an
     };
 
     if (fs.existsSync(backendPath)) {
-        console.log('🟡 Carpeta del proyecto ya existe, continuando...');
-        processGraphModel(graphModel, paths.models, paths.routes, paths.controllers, paths.middleware);
-        return;
+        console.log('🗑️  Proyecto backend ya existe, eliminando contenido anterior...');
+        try {
+            // Eliminar todo el directorio del backend de forma recursiva
+            fs.rmSync(backendPath, { recursive: true, force: true });
+            console.log('✅ Contenido anterior eliminado exitosamente');
+        } catch (error) {
+            console.error('❌ Error al eliminar el directorio anterior:', error);
+            throw error;
+        }
     }
 
     crearCarpetaSiNoExiste(projectFolderPath);
@@ -243,12 +248,9 @@ const processGraphModel = (graphModel1: any,modelsPath: string,routesPath: strin
     console.log('Creando relaciones por clase:', relacionesporclase);
     generarIndexModels(modelsPath, relacionesporclase, clases);
     
-    // Buscar la clase de usuarios para pasarla al generador de login
-    const userClassNames = ['user', 'users', 'usuario', 'usuarios'];
+    // Buscar la clase de usuarios para pasarla al generador de login usando función importada
     const userClass = clases.find((clase: any) => 
-        userClassNames.some(className => 
-            clase.name && clase.name.toLowerCase().includes(className.toLowerCase())
-        )
+        isUserClass(clase.name)
     );
     
     crearMiddleware(middlewarePath, userClass);
@@ -280,7 +282,7 @@ const generarLogin = (controllersPath: string, userClass?: any): void => {
     // Usar la clase de usuario encontrada o usar 'Users' por defecto
     const userClassName = userClass ? userClass.name : 'Users';
     
-    // Buscar los nombres de los campos de username y password
+    // Buscar los nombres de los campos de username y password usando funciones importadas
     let usernameField = 'username';
     let passwordField = 'password';
     let allFields: any[] = [];
@@ -288,16 +290,8 @@ const generarLogin = (controllersPath: string, userClass?: any): void => {
     if (userClass && userClass.properties) {
         allFields = userClass.properties;
         
-        const usernameProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('username') || 
-            prop.name.toLowerCase().includes('usuario') ||
-            prop.name.toLowerCase().includes('user')
-        );
-        const passwordProperty = userClass.properties.find((prop: any) => 
-            prop.name.toLowerCase().includes('password') || 
-            prop.name.toLowerCase().includes('contraseña') ||
-            prop.name.toLowerCase().includes('clave')
-        );
+        const usernameProperty = findUsernameField(userClass.properties);
+        const passwordProperty = findPasswordField(userClass.properties);
         
         if (usernameProperty) usernameField = usernameProperty.name;
         if (passwordProperty) passwordField = passwordProperty.name;
@@ -565,14 +559,15 @@ const generarRutas = (node: any,routesPath: string): void => {
     const content = `
 import { Router } from 'express';
 import { getByID, getAll, post${className}, put${className}, deleteID } from '../controllers/${className}';
+import { checkAuth } from '../middleware/checkAuth';
 
 const router = Router();
 
-router.get('',getAll);
-router.get('/:id', getByID);
-router.post('', post${className});
-router.put('/:id', put${className});
-router.delete('/:id', deleteID);
+router.get('',checkAuth,getAll);
+router.get('/:id', checkAuth, getByID);
+router.post('', checkAuth, post${className});
+router.put('/:id', checkAuth, put${className});
+router.delete('/:id', checkAuth, deleteID);
 
 export { router };
 `;

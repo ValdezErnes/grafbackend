@@ -211,13 +211,12 @@ export class ${clase.name}Component implements OnInit {
   <h1>${clase.name}</h1>
 
   <!-- Selector de Método -->
-  <div class="method-selector">
-    <select [(ngModel)]="selectedMethod">
+  <div class="method-selector" >
+    <select [(ngModel)]="selectedMethod" (change)="executeMethod()">
       <option value="getAll">Obtener todos</option>
       <option value="getById">Obtener por ID</option>
       <option value="create">Crear nuevo</option>
     </select>
-    <button class="execute-btn" (click)="executeMethod()">Ejecutar</button>
   </div>
 
   <!-- Buscador por ID -->

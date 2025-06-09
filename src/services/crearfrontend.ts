@@ -27,7 +27,7 @@ const crearCarpetaSiNoExiste = (ruta: string) => {
 };
 
 export const createProjectFrontend = async (nombreProyecto: string, graphModel1: string, puertoBackend:string, projectFolderPath: string): Promise<void> => {
-    const frontendPath = path.join(projectFolderPath, `${nombreProyecto}-frontend`);
+    const frontendPath = path.join(projectFolderPath, `frontend`);
     const srcPath = path.join(frontendPath, "src", "app");
     const srcsinapp = path.join(frontendPath, "src");
     const componentsPath = path.join(srcPath, "components");

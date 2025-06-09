@@ -15,8 +15,8 @@ interface GraphModel {
 
 export const generarcarpetas = async (proyectFolderPath:string,nombreProyecto: string, graphModel1: string): Promise<void> => {
     
-    const srcbackend = path.join(proyectFolderPath, `${nombreProyecto}-backend`, 'src');
-    const srcfrontend = path.join(proyectFolderPath, `${nombreProyecto}-frontend`, 'src', 'app');
+    const srcbackend = path.join(proyectFolderPath, `backend`, 'src');
+    const srcfrontend = path.join(proyectFolderPath, `frontend`, 'src', 'app');
 
     // Parsea el modelo gráfico
     const graphModel: GraphModel = typeof graphModel1 === "string" ? JSON.parse(graphModel1) : graphModel1;

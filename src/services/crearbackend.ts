@@ -67,8 +67,8 @@ const instalarDependenciasBackend = async (backendPath: string, dialecto: string
 };
 
 export const createProjectBackend = async (nombreProyecto: string,graphModel: any,credenciales: Credenciales,projectFolderPath: string): Promise<void> => {
-    const backendPath = path.join(projectFolderPath, `${nombreProyecto}-backend`);
-    const srcbackend = path.join(projectFolderPath, `${nombreProyecto}-backend`, 'src');
+    const backendPath = path.join(projectFolderPath, `backend`);
+    const srcbackend = path.join(projectFolderPath, `backend`, 'src');
 
     const paths: Paths = {
         config: path.join(backendPath, 'src', 'config'),
